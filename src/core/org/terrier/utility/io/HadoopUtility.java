@@ -332,8 +332,8 @@ public class HadoopUtility {
 
 	protected static Path makeTemporaryFile(JobConf jobConf, String filename) throws IOException
 	{
-		final int randomKey = jobConf.getInt("terrier.tempfile.id", random.nextInt());
-		jobConf.setInt("terrier.tempfile.id", randomKey);
+		final String randomKey = jobConf.get("terrier.tempfile.id", UUID.randomUUID().toString());
+		jobConf.set("terrier.tempfile.id", randomKey);
 		FileSystem defFS = FileSystem.get(jobConf);
         final Path tempFile = new Path(HADOOP_TMP_PATH + "/"+(randomKey)+"-"+filename);
         defFS.deleteOnExit(tempFile);
