@@ -128,6 +128,7 @@ public class HadoopIndexing
 			
 		boolean docPartitioned = false;
 		int numberOfReducers = Integer.parseInt(ApplicationSetup.getProperty("terrier.hadoop.indexing.reducers", "26"));
+		int numberOfMaps = Integer.parseInt(ApplicationSetup.getProperty("terrier.hadoop.indexing.maps", "-1"));
 		final HadoopPlugin.JobFactory jf = HadoopPlugin.getJobFactory("HOD-TerrierIndexing");
 		if (args.length==2 && args[0].equals("-p"))
 		{
@@ -193,8 +194,10 @@ public class HadoopIndexing
 		conf.setMapOutputKeyClass(SplitEmittedTerm.class);
 		conf.setMapOutputValueClass(MapEmittedPostingList.class);
 		conf.setBoolean("indexing.hadoop.multiple.indices", docPartitioned);
+		if (numberOfMaps != -1)
+			conf.setNumMapTasks(numberOfMaps);
 		
-		if (! conf.get("mapred.job.tracker").equals("local"))
+		if (! HadoopUtility.isLocalCluster(conf))
 		{
 			conf.setMapOutputCompressorClass(GzipCodec.class);
 			conf.setCompressMapOutput(true);

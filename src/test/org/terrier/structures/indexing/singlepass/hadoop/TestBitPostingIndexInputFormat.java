@@ -93,7 +93,9 @@ public class TestBitPostingIndexInputFormat extends ApplicationSetupBasedTest {
 		}
 		@Override
 		public void progress() {
-		}		
+		}
+		@Override
+		public float getProgress() {return 0;}
 	};
 	
 	protected Index writeIndexStructure(int[][] postings) throws Exception

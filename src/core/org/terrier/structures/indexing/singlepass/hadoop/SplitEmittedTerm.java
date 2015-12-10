@@ -49,7 +49,6 @@ import org.apache.hadoop.mapred.Partitioner;
  * @author Richard McCreadie
  * @since 3.0
  */
-@SuppressWarnings("deprecation")
 public class SplitEmittedTerm implements WritableComparable<SplitEmittedTerm>{
 
 	/** Should we use the hadoop readText method or java.io.readUTF? */

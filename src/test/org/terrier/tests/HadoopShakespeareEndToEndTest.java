@@ -25,15 +25,15 @@
  */
 package org.terrier.tests;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 import gnu.trove.TIntHashSet;
-
-import static org.junit.Assert.*;
 
 import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.mapred.InputSplit;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.RecordReader;
-
+import org.apache.hadoop.util.VersionInfo;
 import org.terrier.structures.CollectionStatistics;
 import org.terrier.structures.Index;
 import org.terrier.structures.IndexOnDisk;
@@ -46,7 +46,6 @@ import org.terrier.utility.ApplicationSetup;
 import org.terrier.utility.Wrapper.IntObjectWrapper;
 import org.terrier.utility.io.HadoopPlugin;
 import org.terrier.utility.io.HadoopUtility;
-@SuppressWarnings("deprecation")
 public class HadoopShakespeareEndToEndTest 
 {
 	static class CheckDirectHSplits extends BatchEndToEndTestEventHooks
@@ -54,6 +53,10 @@ public class HadoopShakespeareEndToEndTest
 		@Override
 		public boolean validPlatform() {
 			if (System.getProperty("os.name").toLowerCase().contains("windows"))
+				return false;
+			String hadoopVersion = VersionInfo.getVersion();
+			String majHadoopVersion = hadoopVersion.split("\\.")[0];
+			if (majHadoopVersion.equals("2"))
 				return false;
 			return super.validPlatform();
 		}

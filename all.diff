@@ -1,0 +1,1915 @@
+diff --git a/pom.xml b/pom.xml
+index c512d92..cc2f11c 100644
+--- a/pom.xml
++++ b/pom.xml
+@@ -77,31 +77,55 @@
+ 	</dependency>
+ 
+ 	<dependency>
+-		<groupId>org.apache.hadoop</groupId>
+-		<artifactId>hadoop-core</artifactId>
+-		<version>0.20.2</version> <!-- Should be 0.20.2+228 -->
+-		
+-		<exclusions>
+-                        <exclusion>
+-                        	<groupId>org.mortbay.jetty</groupId>
+-                        	<artifactId>jetty</artifactId>
+-                        </exclusion>
+-                        <exclusion>
+-                        	<groupId>org.mortbay.jetty</groupId>
+-                        	<artifactId>jetty-util</artifactId>
+-                        </exclusion>
+-                        <exclusion>
+-                        	<groupId>org.mortbay.jetty</groupId>
+-                        	<artifactId>jsp-api-2.1</artifactId>
+-                        </exclusion>
+-                        <exclusion>
+-                        	<groupId>org.mortbay.jetty</groupId>
+-                        	<artifactId>servlet-api-2.5</artifactId>
+-                        </exclusion>
+-                </exclusions>
+-		
+-	</dependency>
++    <groupId>org.apache.hadoop</groupId>
++    <artifactId>hadoop-hdfs</artifactId>
++    <version>2.7.1</version>
++</dependency>
++<dependency>
++    <groupId>org.apache.hadoop</groupId>
++    <artifactId>hadoop-common</artifactId>
++    <version>2.7.1</version>
++     <exclusions>
++             <exclusion>
++             <groupId>org.slf4j</groupId>
++             <artifactId>slf4j-log4j12</artifactId>
++             </exclusion>
++     </exclusions>
++</dependency>
++
++<dependency>
++	<groupId>org.apache.hadoop</groupId>
++	<artifactId>hadoop-minicluster</artifactId>
++	<version>2.7.1</version>
++	<scope>test</scope>
++</dependency>
++
++   <dependency>
++	<groupId>org.slf4j</groupId>
++    <artifactId>slf4j-api</artifactId>
++	<version>1.7.13</version>
++</dependency>
++
++   <dependency>
++	<groupId>org.slf4j</groupId>
++    <artifactId>slf4j-simple</artifactId>
++	<version>1.7.13</version>
++</dependency>
++
++<dependency>
++	<groupId>org.apache.hadoop</groupId>
++	<artifactId>hadoop-mapreduce-client-core</artifactId>
++	<version>2.6.0</version>
++	<exclusions>
++             <exclusion>
++             <groupId>org.slf4j</groupId>
++             <artifactId>slf4j-log4j12</artifactId>
++             </exclusion>
++     </exclusions>
++</dependency>
++
+ 
++	
+ 	<dependency>
+ 		<groupId>org.jsoup</groupId>
+ 		<artifactId>jsoup</artifactId>
+@@ -375,8 +399,7 @@
+       			<artifactId>maven-assembly-plugin</artifactId>
+       			<version>2.6</version>
+       			<configuration>
+-      				<descriptor>src/assembly/bin.xml</descriptor>
+-		   			 <finalName>terrier-core-${project.version}</finalName>
++      				 <finalName>terrier-core-${project.version}</finalName>
+         			<archive>
+           				<manifest>
+             				<mainClass>TrecTerrier</mainClass>
+@@ -385,6 +408,13 @@
+         			<descriptorRefs>
+           				<descriptorRef>jar-with-dependencies</descriptorRef>
+         			</descriptorRefs>
++        			 <dependencySets>
++					   <dependencySet>
++					     <excludes>
++					       <exclude>org.slf4j:slf4j-log4j12</exclude>
++					     </excludes>
++					   </dependencySet>
++					 </dependencySets>
+       			</configuration>
+     		</plugin>
+     		
+@@ -399,21 +429,26 @@
+                         <goal>shade</goal>
+                     </goals>
+                     <configuration>
++                    <artifactSet>
++            		    <excludes>
++            		    	<exclude>org.slf4j:slf4j-log4j12</exclude>
++            		    </excludes>
++            		 </artifactSet>
+                         <!--<artifactSet>
+                             <excludes>
+                                 <exclude>jarname</exclude>
+                             </excludes>
+                         </artifactSet> -->
+                         <filters>
+-			  <filter>
+-			    <artifact>*:*</artifact>
+-			    <excludes>
+-			      <exclude>META-INF/*.SF</exclude>
+-			      <exclude>META-INF/*.DSA</exclude>
+-			      <exclude>META-INF/*.RSA</exclude>
+-			    </excludes>
+-			  </filter>
+-			 </filters>
++						  <filter>
++						    <artifact>*:*</artifact>
++						    <excludes>
++						      <exclude>META-INF/*.SF</exclude>
++						      <exclude>META-INF/*.DSA</exclude>
++						      <exclude>META-INF/*.RSA</exclude>
++						    </excludes>
++						  </filter>
++						 </filters>
+ 
+                          <transformers>
+                             <transformer
+diff --git a/src/core/org/terrier/applications/HadoopIndexing2.java b/src/core/org/terrier/applications/HadoopIndexing2.java
+new file mode 100644
+index 0000000..713d094
+--- /dev/null
++++ b/src/core/org/terrier/applications/HadoopIndexing2.java
+@@ -0,0 +1,425 @@
++/*
++ * Terrier - Terabyte Retriever
++ * Webpage: http://terrier.org
++ * Contact: terrier{a.}dcs.gla.ac.uk
++ * University of Glasgow - School of Computing Science
++ * http://www.gla.uk
++ *
++ * The contents of this file are subject to the Mozilla Public License
++ * Version 1.1 (the "License"); you may not use this file except in
++ * compliance with the License. You may obtain a copy of the License at
++ * http://www.mozilla.org/MPL/
++ *
++ * Software distributed under the License is distributed on an "AS IS"
++ * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
++ * the License for the specific language governing rights and limitations
++ * under the License.
++ *
++ * The Original Code is HadoopIndexing.java.
++ *
++ * The Original Code is Copyright (C) 2004-2014 the University of Glasgow.
++ * All Rights Reserved.
++ *
++ * Contributor(s):
++ *   Richard McCreadie <richardm{a.}dcs.gla.ac.uk> (original author)
++ *   Craig Macdonald <craigm{a.}dcs.gla.ac.uk> 
++ */
++
++package org.terrier.applications;
++
++
++import java.io.BufferedReader;
++import java.io.IOException;
++import java.util.ArrayList;
++import java.util.Arrays;
++import java.util.Iterator;
++import java.util.List;
++import java.util.Map;
++
++import org.apache.hadoop.fs.Path;
++import org.apache.hadoop.io.Text;
++import org.apache.hadoop.io.compress.GzipCodec;
++import org.apache.hadoop.mapred.FileInputFormat;
++import org.apache.hadoop.mapred.FileOutputFormat;
++import org.apache.hadoop.mapred.JobClient;
++import org.apache.hadoop.mapred.JobConf;
++import org.apache.hadoop.mapred.JobID;
++import org.apache.hadoop.mapred.RunningJob;
++import org.apache.hadoop.mapred.TaskID;
++import org.apache.hadoop.mapred.lib.HashPartitioner;
++import org.apache.hadoop.mapred.lib.NullOutputFormat;
++import org.slf4j.Logger;
++import org.slf4j.LoggerFactory;
++import org.terrier.structures.BitIndexPointer;
++import org.terrier.structures.FSOMapFileLexiconOutputStream;
++import org.terrier.structures.FieldLexiconEntry;
++import org.terrier.structures.Index;
++import org.terrier.structures.IndexOnDisk;
++import org.terrier.structures.IndexUtil;
++import org.terrier.structures.LexiconEntry;
++import org.terrier.structures.LexiconOutputStream;
++import org.terrier.structures.bit.BitPostingIndexInputStream;
++import org.terrier.structures.indexing.CompressionFactory;
++import org.terrier.structures.indexing.LexiconBuilder;
++import org.terrier.structures.indexing.CompressionFactory.BitCompressionConfiguration;
++import org.terrier.structures.indexing.singlepass.hadoop.Hadoop_BasicSinglePassIndexer;
++import org.terrier.structures.indexing.singlepass.hadoop.Hadoop_BasicSinglePassIndexer2;
++import org.terrier.structures.indexing.singlepass.hadoop.Hadoop_BlockSinglePassIndexer;
++import org.terrier.structures.indexing.singlepass.hadoop.MapEmittedPostingList;
++import org.terrier.structures.indexing.singlepass.hadoop.MultiFileCollectionInputFormat;
++import org.terrier.structures.indexing.singlepass.hadoop.SplitEmittedTerm;
++import org.terrier.structures.seralization.FixedSizeWriteableFactory;
++import org.terrier.utility.ApplicationSetup;
++import org.terrier.utility.FieldScore;
++import org.terrier.utility.Files;
++import org.terrier.utility.TerrierTimer;
++import org.terrier.utility.io.HadoopPlugin;
++import org.terrier.utility.io.HadoopUtility;
++
++/**
++ * Main run class for the MapReduce indexing system.
++ * Provides facilities to preform indexing over multiple
++ * machines in a MapReduce cluster.
++ * <p><h3>Input</h3>
++ * The collection is assumed to be a list of files, as specified in the collection.spec. For more advanced collections,
++ * this class will be need to be changed. The files listed in collection.spec are assumed to be on the Hadoop shared default
++ * filesystem - usually HDFS (else Hadoop will throw an error).
++ * </p>
++ * <p><h3>Output</h3>
++ * This class creates indices for the indexed collection, in the directory specified by <tt>terrier.index.path</tt>. If this
++ * folder is NOT on the Hadoop shared default (e.g. HDFS), then Hadoop will throw an error.
++ * </p>
++ * <p>
++ * <h3>Reducers</h3>
++ * Two reduce modes are supported: <i>term-partitioning</i> creates
++ * a single index with multiple files making up the inverted structure; <i>document-partitioning</i>
++ * creates mulitiple indices, partitioned by docid. More reduce tasks results in higher indexing
++ * speed due to greater concurrency. 
++ * <p>
++ * Term-partitioning is the default scenario. In this scenario, the maximum reducers allowed is
++ * 32. To select document-partitioning, specify the -p flag to main();
++ * <p>
++ * <b>Properties:</b>
++ * <ul>
++ * <li><tt>terrier.hadoop.indexing.reducers</tt> - number of reduce tasks, defaults to 26.</li>
++ * <li>If <tt>block.indexing</tt> is set, then a block index will be created.</li>
++ * </ul>
++ * 
++ * @author Richard McCreadie and Craig Macdonald
++ * @since 2.2
++*/
++
++public class HadoopIndexing2
++{
++	static final int MAX_REDUCE = 26;
++	/** logger for this class */
++	protected static final Logger logger = LoggerFactory.getLogger(HadoopIndexing2.class);
++	
++	private static String usage()
++	{
++		return "Usage: HadoopIndexing [-p]";
++	}
++	
++	/** Starts the MapReduce indexing.
++	 * @param args
++	 * @throws Exception
++	 */	
++	public static void main(String[] args) throws Exception {
++		long time = System.currentTimeMillis();
++			
++		boolean docPartitioned = false;
++		int numberOfReducers = Integer.parseInt(ApplicationSetup.getProperty("terrier.hadoop.indexing.reducers", "26"));
++		final HadoopPlugin.JobFactory jf = HadoopPlugin.getJobFactory("HOD-TerrierIndexing");
++		if (args.length==2 && args[0].equals("-p"))
++		{
++			logger.info("Document-partitioned Mode, "+numberOfReducers+" output indices.");
++			numberOfReducers = Integer.parseInt(args[1]);
++			docPartitioned = true;
++		}
++		else if (args.length == 1 && args[0].equals("--merge"))
++		{
++			if (numberOfReducers > 1)
++				mergeLexiconInvertedFiles(ApplicationSetup.TERRIER_INDEX_PATH, numberOfReducers);
++			else
++				logger.error("No point merging 1 reduce task output");
++			return;
++		}
++		else if (args.length == 0)
++		{
++			logger.info("Term-partitioned Mode, "+numberOfReducers+" reducers creating one inverted index.");
++			docPartitioned = false;
++			if (numberOfReducers > MAX_REDUCE)
++			{
++				logger.warn("Excessive reduce tasks ("+numberOfReducers+") in use "
++					+"- SplitEmittedTerm.SETPartitionerLowercaseAlphaTerm can use "+MAX_REDUCE+" at most");
++			}
++		} else
++		{
++			logger.error(usage());
++			return;
++		}
++		
++		if (! (CompressionFactory.getCompressionConfiguration("inverted", new String[0], false) instanceof BitCompressionConfiguration ))
++        {
++        	logger.error("Sorry, only default BitCompressionConfiguration is supported by HadoopIndexing"
++        			+ " - you can recompress the inverted index later using IndexRecompressor");
++        	return;
++        }
++		
++		
++		if (jf == null)
++			throw new Exception("Could not get JobFactory from HadoopPlugin");
++		final JobConf conf = jf.newJob();
++		conf.setJobName("terrierIndexing");
++		if (Files.exists(ApplicationSetup.TERRIER_INDEX_PATH) && Index.existsIndex(ApplicationSetup.TERRIER_INDEX_PATH, ApplicationSetup.TERRIER_INDEX_PREFIX))
++		{
++			logger.error("Cannot index while index exists at "
++				+ApplicationSetup.TERRIER_INDEX_PATH+"," + ApplicationSetup.TERRIER_INDEX_PREFIX);
++			return;
++		}
++		
++		boolean blockIndexing = ApplicationSetup.BLOCK_INDEXING;
++		if (blockIndexing)
++		{
++			//conf.setMapperClass(Hadoop_BlockSinglePassIndexer.class);
++			//conf.setReducerClass(Hadoop_BlockSinglePassIndexer.class);
++		}
++		else
++		{
++			conf.setMapperClass(Hadoop_BasicSinglePassIndexer2.Hadoop_BasicSinglePassIndexer2_Mapper.class);
++			conf.setReducerClass(Hadoop_BasicSinglePassIndexer2.Hadoop_BasicSinglePassIndexer2_Reducer.class);
++		}
++		FileOutputFormat.setOutputPath(conf, new Path(ApplicationSetup.TERRIER_INDEX_PATH));
++		conf.set("indexing.hadoop.prefix", ApplicationSetup.TERRIER_INDEX_PREFIX);
++		conf.setMapOutputKeyClass(SplitEmittedTerm.class);
++		conf.setMapOutputValueClass(MapEmittedPostingList.class);
++		conf.setBoolean("indexing.hadoop.multiple.indices", docPartitioned);
++		
++		if (! conf.get("mapred.job.tracker").equals("local"))
++		{
++			conf.setMapOutputCompressorClass(GzipCodec.class);
++			conf.setCompressMapOutput(true);
++		}
++		else
++		{
++			conf.setCompressMapOutput(false);
++		}
++		
++		conf.setInputFormat(MultiFileCollectionInputFormat.class);
++		conf.setOutputFormat(NullOutputFormat.class);
++		conf.setOutputKeyComparatorClass(SplitEmittedTerm.SETRawComparatorTermSplitFlush.class);
++		conf.setOutputValueGroupingComparator(SplitEmittedTerm.SETRawComparatorTerm.class);
++		conf.setReduceSpeculativeExecution(false);
++		//parse the collection.spec
++		BufferedReader specBR = Files.openFileReader(ApplicationSetup.COLLECTION_SPEC);
++		String line = null;
++		List<Path> paths = new ArrayList<Path>();
++		while((line = specBR.readLine()) != null)
++		{
++			if (line.startsWith("#"))
++				continue;
++			paths.add(new Path(line));
++		}
++		specBR.close();
++		FileInputFormat.setInputPaths(conf,paths.toArray(new Path[paths.size()]));
++		conf.setNumReduceTasks(numberOfReducers);
++		if (numberOfReducers> 1)
++		{
++			if (docPartitioned)
++				conf.setPartitionerClass(SplitEmittedTerm.SETPartitioner.class);
++			else
++				conf.setPartitionerClass(SplitEmittedTerm.SETPartitionerLowercaseAlphaTerm.class);
++		}
++		else
++		{
++			//for JUnit tests, we seem to need to restore the original partitioner class
++			conf.setPartitionerClass(HashPartitioner.class);
++		}
++		
++		JobID jobId = null;
++		boolean ranOK = true;
++		try{
++			RunningJob rj = JobClient.runJob(conf);
++			jobId = rj.getID();
++			HadoopUtility.finishTerrierJob(conf);
++		} catch (Exception e) { 
++			logger.error("Problem running job", e);
++			ranOK = false;
++		}
++		if (jobId != null)
++		{
++			deleteTaskFiles(ApplicationSetup.TERRIER_INDEX_PATH, jobId);
++		}
++		if (ranOK)
++		{
++			if (! docPartitioned)
++			{
++				if (numberOfReducers > 1)
++					mergeLexiconInvertedFiles(ApplicationSetup.TERRIER_INDEX_PATH, numberOfReducers);
++			}
++			
++			Hadoop_BasicSinglePassIndexer.finish(
++					ApplicationSetup.TERRIER_INDEX_PATH, 
++					docPartitioned ? numberOfReducers : 1, 
++					jf);
++		}
++		System.out.println("Time Taken = "+((System.currentTimeMillis()-time)/1000)+" seconds");
++		jf.close();
++	}
++
++	/** for term partitioned indexing, this method merges the lexicons from each reducer
++	 * @param index_path path of index
++	 * @param numberOfReducers number of inverted files expected
++	 */
++	@SuppressWarnings("unchecked")
++	protected static void mergeLexiconInvertedFiles(String index_path, int numberOfReducers) throws IOException {
++		final String lexiconStructure = "lexicon";
++		final String tmpLexiconStructure = "newlex";
++		final String invertedStructure = "inverted";
++
++		logger.info("Merging lexicons");
++		
++		//we're handling indices as streams, so dont need to load it. but remember previous status
++		//moreover, our indices dont have document objects, so errors may occur in preloading
++		final boolean indexProfile = Index.getIndexLoadingProfileAsRetrieval();
++		Index.setIndexLoadingProfileAsRetrieval(false);
++		
++		
++		//1. load in the input indices
++		final Index[] srcIndices = new Index[numberOfReducers];
++		final boolean[] existsIndices = new boolean[numberOfReducers];
++		Arrays.fill(existsIndices, true);
++		int terms = 0;
++		for(int i=0;i<numberOfReducers;i++)
++		{
++			final String index_prefix = ApplicationSetup.TERRIER_INDEX_PREFIX+"-"+i;
++			srcIndices[i] = Index.createIndex(index_path, index_prefix);
++			if (srcIndices[i] == null)
++			{
++				//remove any empty inverted file for this segment
++				Files.delete(BitPostingIndexInputStream.getFilename(index_path, index_prefix, invertedStructure, (byte)1, (byte)1));
++				
++				//remember that this index doesnt exist
++				existsIndices[i] = false;
++				logger.warn("No reduce "+i+" output : no output index ["+index_path+","+index_prefix+ "]");
++			} else {
++				terms += srcIndices[i].getCollectionStatistics().getNumberOfUniqueTerms();
++			}
++		}
++		//2. the target index is the first source index
++		Index dest = srcIndices[0] != null ? srcIndices[0] : Index.createIndex(index_path, ApplicationSetup.TERRIER_INDEX_PREFIX+"-"+0);
++		if (dest == null)
++		{
++			throw new IllegalArgumentException("No index found at " + index_path + ","+ ApplicationSetup.TERRIER_INDEX_PREFIX+"-"+0);
++		}
++		
++		//3. create the new lexicon
++		LexiconOutputStream<String> lexOut = new FSOMapFileLexiconOutputStream(
++				(IndexOnDisk)dest, tmpLexiconStructure, 
++				(FixedSizeWriteableFactory<Text>) dest.getIndexStructure(lexiconStructure + "-keyfactory"),
++				(Class<? extends FixedSizeWriteableFactory<LexiconEntry>>) dest.getIndexStructure(lexiconStructure + "-valuefactory").getClass());
++		
++		//4. append each source lexicon on to the new lexicon, amending the filenumber as we go
++		TerrierTimer tt = new TerrierTimer("Merging lexicon entries", terms);
++		tt.start();
++		int termId = 0;
++		try{
++			for(int i=0;i<numberOfReducers;i++)
++			{
++				//the partition did not have any stuff
++				if (! existsIndices[i])
++				{
++					//touch an empty inverted index file for this segment, as BitPostingIndex requires that all of the files exist
++					Files.writeFileStream(BitPostingIndexInputStream.getFilename(
++							(IndexOnDisk)dest, invertedStructure, (byte)numberOfReducers, (byte)i)).close();
++					continue;
++				}
++				//else, append the lexicon
++				Iterator<Map.Entry<String,LexiconEntry>> lexIn = (Iterator<Map.Entry<String, LexiconEntry>>) srcIndices[i].getIndexStructureInputStream("lexicon");
++				while(lexIn.hasNext())
++				{
++					Map.Entry<String,LexiconEntry> e = lexIn.next();
++					e.getValue().setTermId(termId);
++					((BitIndexPointer)e.getValue()).setFileNumber((byte)i);
++					lexOut.writeNextEntry(e.getKey(), e.getValue());
++					termId++;
++				}
++				IndexUtil.close(lexIn);
++				//rename the inverted file to be part of the destination index
++				Files.rename(
++						BitPostingIndexInputStream.getFilename((IndexOnDisk)srcIndices[i], invertedStructure, (byte)1, (byte)1), 
++						BitPostingIndexInputStream.getFilename((IndexOnDisk)dest, invertedStructure, (byte)numberOfReducers, (byte)i));
++				tt.increment();
++			}
++		} finally {
++			tt.finished();
++		}
++		lexOut.close();
++		logger.info("Structure cleanups");
++		
++		//5. change over lexicon structures
++		final String[] structureSuffices = new String[]{"", "-entry-inputstream"};
++		//remove old lexicon structures
++		for (String suffix : structureSuffices)
++		{
++			if (! IndexUtil.deleteStructure(dest, lexiconStructure + suffix))
++				logger.warn("Structure " + lexiconStructure + suffix + " not found when removing");
++		}
++		//rename new lexicon structures
++		for (String suffix : structureSuffices)
++		{
++			if (! IndexUtil.renameIndexStructure(dest, tmpLexiconStructure + suffix, lexiconStructure + suffix))
++				logger.warn("Structure " + tmpLexiconStructure + suffix + " not found when renaming");
++		}
++		IndexUtil.deleteStructure(dest, tmpLexiconStructure + "-valuefactory");
++		
++		//6. update destimation index
++		
++		if (FieldScore.FIELDS_COUNT > 0)
++			dest.addIndexStructure("lexicon-valuefactory", FieldLexiconEntry.Factory.class.getName(), "java.lang.String", "${index.inverted.fields.count}");
++		dest.setIndexProperty("index."+invertedStructure+".data-files", ""+numberOfReducers);
++		LexiconBuilder.optimise((IndexOnDisk)dest, lexiconStructure);
++		dest.flush();
++		
++		//7. close source and dest indices
++		for(Index src: srcIndices) //dest is also closed
++		{
++			if (src != null)
++				src.close();
++		}
++		
++		//8. rearrange indices into desired layout
++		
++		//rename target index
++		IndexUtil.renameIndex(index_path, ApplicationSetup.TERRIER_INDEX_PREFIX+"-"+0, index_path, ApplicationSetup.TERRIER_INDEX_PREFIX);
++		//delete other source indices
++		for(int i=1;i<numberOfReducers;i++)
++		{
++			if (existsIndices[i])
++				IndexUtil.deleteIndex(index_path, ApplicationSetup.TERRIER_INDEX_PREFIX+"-"+i);
++		}
++		
++		//restore loading profile
++		Index.setIndexLoadingProfileAsRetrieval(indexProfile);
++	}
++
++	/** Performs cleanup of an index path removing temporary files */
++	public static void deleteTaskFiles(String path, JobID job)
++	{
++		String[] fileNames = Files.list(path);
++		if (fileNames == null)
++			return;
++		for(String filename : fileNames)
++		{
++			String periodParts[] = filename.split("\\.");
++			try{
++				TaskID tid = TaskID.forName(periodParts[0]);
++				if (tid.getJobID().equals(job))
++				{
++					if (! Files.delete(path + "/" + filename))
++						logger.warn("Could not delete temporary map side-effect file "+ path + "/" + filename);
++				}
++			} catch (Exception e) {}
++		}   
++	 }
++}
+diff --git a/src/core/org/terrier/structures/indexing/singlepass/hadoop/BitPostingIndexInputFormat.java b/src/core/org/terrier/structures/indexing/singlepass/hadoop/BitPostingIndexInputFormat.java
+index b1f554d..53c18bd 100644
+--- a/src/core/org/terrier/structures/indexing/singlepass/hadoop/BitPostingIndexInputFormat.java
++++ b/src/core/org/terrier/structures/indexing/singlepass/hadoop/BitPostingIndexInputFormat.java
+@@ -70,7 +70,6 @@ import org.terrier.utility.io.HadoopUtility;
+  * <li><tt>mapred.bitpostingindex.lookup.structure</tt> - which structure's inputstream is the Iterator of BitIndexPointers?</li>
+  * </ul>
+  */
+-@SuppressWarnings("deprecation")
+ public class BitPostingIndexInputFormat extends FileInputFormat<IntWritable, IntObjectWrapper<IterablePosting>> {
+ 
+ 	final static Logger logger = LoggerFactory.getLogger(BitPostingIndexInputFormat.class);
+@@ -467,7 +466,12 @@ public class BitPostingIndexInputFormat extends FileInputFormat<IntWritable, Int
+ 				public org.apache.hadoop.mapred.Counters.Counter getCounter(Enum arg0) {return null;}
+ 				public org.apache.hadoop.mapred.Counters.Counter getCounter(String arg0, String arg1) {return null;}
+ 				public void setStatus(String arg0) {}
+-				public void progress() {}}
++				public void progress() {}
++				@Override
++				public float getProgress() {
++					// TODO Auto-generated method stub
++					return 0;
++				}}
+ 			);
+ 			IntWritable key = rr.createKey();
+ 			IntObjectWrapper<IterablePosting> value = rr.createValue();
+diff --git a/src/core/org/terrier/structures/indexing/singlepass/hadoop/Hadoop2RunWriter.java b/src/core/org/terrier/structures/indexing/singlepass/hadoop/Hadoop2RunWriter.java
+new file mode 100644
+index 0000000..ae78f62
+--- /dev/null
++++ b/src/core/org/terrier/structures/indexing/singlepass/hadoop/Hadoop2RunWriter.java
+@@ -0,0 +1,51 @@
++package org.terrier.structures.indexing.singlepass.hadoop;
++
++import java.io.IOException;
++
++import org.apache.hadoop.io.Text;
++import org.apache.hadoop.mapreduce.Mapper;
++import org.terrier.compression.bit.MemorySBOS;
++import org.terrier.indexing.Document;
++import org.terrier.structures.indexing.singlepass.Posting;
++import org.terrier.utility.io.WrappedIOException;
++
++public class Hadoop2RunWriter extends HadoopRunWriter {
++
++	/** output collector of Map task */
++	protected Mapper<Text, SplitAwareWrapper<Document>, SplitEmittedTerm, MapEmittedPostingList>.Context outputCollector = null;
++	
++	
++	public Hadoop2RunWriter(
++			Mapper<Text, SplitAwareWrapper<Document>, SplitEmittedTerm, MapEmittedPostingList>.Context currentReporter,
++			String _mapId, int _splitId, int _flushNo) {
++		super(null, _mapId, _splitId, _flushNo);
++		outputCollector = currentReporter;
++	}
++	
++	@Override
++	public void writeTerm(final String term, final Posting post) throws IOException
++	{	
++		final MemorySBOS Docs = post.getDocs();
++		Docs.pad();
++		//get the posting array buffer
++		byte[] buffer = new byte[Docs.getMOS().getPos()+1];
++		System.arraycopy(Docs.getMOS().getBuffer(), 0, 
++				buffer, 0, 
++				Math.min(Docs.getMOS().getBuffer().length, Docs.getMOS().getPos()+1));
++		
++		//emit the term and its posting list
++		try{
++		outputCollector.write(
++				SplitEmittedTerm.createNewTerm(term, splitId, flushNo), 
++				MapEmittedPostingList.create_Hadoop_WritableRunPostingData(
++						mapId,
++						flushNo, 
++						splitId,
++						buffer,
++						post.getDocF(), post.getTF()));
++		} catch (InterruptedException ie) {
++			throw new WrappedIOException(ie);
++		}
++	}
++
++}
+diff --git a/src/core/org/terrier/structures/indexing/singlepass/hadoop/HadoopRunWriter.java b/src/core/org/terrier/structures/indexing/singlepass/hadoop/HadoopRunWriter.java
+index 08226f8..753ab6c 100644
+--- a/src/core/org/terrier/structures/indexing/singlepass/hadoop/HadoopRunWriter.java
++++ b/src/core/org/terrier/structures/indexing/singlepass/hadoop/HadoopRunWriter.java
+@@ -30,7 +30,6 @@ package org.terrier.structures.indexing.singlepass.hadoop;
+ import java.io.IOException;
+ 
+ import org.apache.hadoop.mapred.OutputCollector;
+-
+ import org.terrier.compression.bit.MemorySBOS;
+ import org.terrier.structures.indexing.singlepass.Posting;
+ import org.terrier.structures.indexing.singlepass.RunWriter;
+@@ -53,14 +52,14 @@ public class HadoopRunWriter extends RunWriter {
+ 	
+ 	/** Create a new HadoopRunWriter, specifying the output collector of the map task
+ 	 * the run number and the flush number.
+-	 * @param _outputCollector where to emit the posting lists to
++	 * @param currentReporter where to emit the posting lists to
+ 	 * @param _mapId the task id of the map currently being processed
+ 	 * @param _flushNo the number of times that this map task has flushed
+ 	 */
+-	public HadoopRunWriter(OutputCollector<SplitEmittedTerm, MapEmittedPostingList> _outputCollector,
++	public HadoopRunWriter(OutputCollector<SplitEmittedTerm, MapEmittedPostingList> currentReporter,
+ 			String _mapId, int _splitId, int _flushNo)
+ 	{
+-		this.outputCollector = _outputCollector;
++		this.outputCollector = currentReporter;
+ 		this.mapId = _mapId;
+ 		this.flushNo = _flushNo;
+ 		this.splitId = _splitId;
+@@ -85,6 +84,7 @@ public class HadoopRunWriter extends RunWriter {
+ 				Math.min(Docs.getMOS().getBuffer().length, Docs.getMOS().getPos()+1));
+ 		
+ 		//emit the term and its posting list
++	
+ 		outputCollector.collect(
+ 				SplitEmittedTerm.createNewTerm(term, splitId, flushNo), 
+ 				MapEmittedPostingList.create_Hadoop_WritableRunPostingData(
+@@ -92,7 +92,7 @@ public class HadoopRunWriter extends RunWriter {
+ 						flushNo, 
+ 						splitId,
+ 						buffer,
+-						post.getDocF(), post.getTF()));
++						post.getDocF(), post.getTF()));		
+ 	}
+ 	
+ 	@Override
+diff --git a/src/core/org/terrier/structures/indexing/singlepass/hadoop/Hadoop_BasicSinglePassIndexer.java b/src/core/org/terrier/structures/indexing/singlepass/hadoop/Hadoop_BasicSinglePassIndexer.java
+index ef27bba..6038aec 100644
+--- a/src/core/org/terrier/structures/indexing/singlepass/hadoop/Hadoop_BasicSinglePassIndexer.java
++++ b/src/core/org/terrier/structures/indexing/singlepass/hadoop/Hadoop_BasicSinglePassIndexer.java
+@@ -48,7 +48,6 @@ import org.apache.hadoop.mapred.OutputCollector;
+ import org.apache.hadoop.mapred.Reducer;
+ import org.apache.hadoop.mapred.Reporter;
+ import org.apache.hadoop.mapred.TaskAttemptID;
+-
+ import org.terrier.compression.bit.BitIn;
+ import org.terrier.compression.bit.BitOutputStream;
+ import org.terrier.indexing.Document;
+@@ -75,9 +74,9 @@ import org.terrier.utility.FieldScore;
+ import org.terrier.utility.Files;
+ import org.terrier.utility.TerrierTimer;
+ import org.terrier.utility.io.HadoopPlugin;
++import org.terrier.utility.io.HadoopPlugin.JobFactory;
+ import org.terrier.utility.io.HadoopUtility;
+ import org.terrier.utility.io.WrappedIOException;
+-import org.terrier.utility.io.HadoopPlugin.JobFactory;
+ 
+ /**
+  * Single Pass MapReduce indexer. 
+@@ -99,7 +98,6 @@ import org.terrier.utility.io.HadoopPlugin.JobFactory;
+  * @author Richard McCreadie and Craig Macdonald
+  * @since 2.2
+   */
+-@SuppressWarnings("deprecation")
+ public class Hadoop_BasicSinglePassIndexer 
+ 	extends BasicSinglePassIndexer 
+ 	implements Mapper<Text, SplitAwareWrapper<Document>, SplitEmittedTerm, MapEmittedPostingList>,
+@@ -275,9 +273,17 @@ public class Hadoop_BasicSinglePassIndexer
+ 	protected void configureMap() throws Exception
+ 	{	
+ 		super.init();
+-		Path indexDestination = FileOutputFormat.getWorkOutputPath(jc);
+-		Files.mkdir(indexDestination.toString());
+-		mapTaskID = TaskAttemptID.forName(jc.get("mapred.task.id")).getTaskID().toString();
++		Path indexDestination = FileOutputFormat.getOutputPath(jc); // FileOutputFormat.getWorkOutputPath(jc);
++//		if (! FileSystem.get(jc).mkdirs(indexDestination))
++//		{
++//			throw new IOException("1 Unable to make WorkOuputPath for " + jc.get("mapreduce.task.attempt.id") + " at " + indexDestination.toString());
++//		}
++		
++		if (! Files.mkdir(indexDestination.toString()))
++		{
++			throw new IOException("2 Unable to make WorkOuputPath for " + jc.get("mapreduce.task.attempt.id") + " at " + indexDestination.toString());
++		}
++		mapTaskID = TaskAttemptID.forName(jc.get("mapreduce.task.attempt.id")).getTaskID().toString();
+ 		currentIndex = Index.createNewIndex(indexDestination.toString(), mapTaskID);
+ 		maxMemory = Long.parseLong(ApplicationSetup.getProperty("indexing.singlepass.max.postings.memory", "0"));
+ 		//during reduce, we dont want to load indices into memory, as we only use
+diff --git a/src/core/org/terrier/structures/indexing/singlepass/hadoop/Hadoop_BasicSinglePassIndexer2.java b/src/core/org/terrier/structures/indexing/singlepass/hadoop/Hadoop_BasicSinglePassIndexer2.java
+new file mode 100644
+index 0000000..15b52ef
+--- /dev/null
++++ b/src/core/org/terrier/structures/indexing/singlepass/hadoop/Hadoop_BasicSinglePassIndexer2.java
+@@ -0,0 +1,875 @@
++/*
++ * Terrier - Terabyte Retriever 
++ * Webpage: http://terrier.org 
++ * Contact: terrier{a.}dcs.gla.ac.uk
++ * University of Glasgow - School of Computing Science
++ * http://www.gla.ac.uk/
++ * 
++ * The contents of this file are subject to the Mozilla Public License
++ * Version 1.1 (the "License"); you may not use this file except in
++ * compliance with the License. You may obtain a copy of the License at
++ * http://www.mozilla.org/MPL/
++ *
++ * Software distributed under the License is distributed on an "AS IS"
++ * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
++ * the License for the specific language governing rights and limitations
++ * under the License.
++ *
++ * The Original Code is SortAscendingTripleVectors.java.
++ *
++ * The Original Code is Copyright (C) 2004-2014 the University of Glasgow.
++ * All Rights Reserved.
++ *
++ * Contributor(s):
++ *  Craig Macdonald <craigm{a.}dcs.gla.ac.uk
++ *  Richard McCreadie <richardm{a.}dcs.gla.ac.uk
++ */
++
++package org.terrier.structures.indexing.singlepass.hadoop;
++
++import java.io.DataInputStream;
++import java.io.DataOutputStream;
++import java.io.IOException;
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.Iterator;
++import java.util.LinkedList;
++import java.util.List;
++import java.util.Map;
++
++import org.apache.hadoop.fs.FileStatus;
++import org.apache.hadoop.fs.FileSystem;
++import org.apache.hadoop.fs.Path;
++import org.apache.hadoop.io.Text;
++import org.apache.hadoop.mapred.TaskAttemptID;
++import org.apache.hadoop.mapreduce.JobContext;
++import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
++import org.slf4j.Logger;
++import org.slf4j.LoggerFactory;
++import org.terrier.compression.bit.BitIn;
++import org.terrier.compression.bit.BitOutputStream;
++import org.terrier.indexing.Document;
++import org.terrier.structures.BasicLexiconEntry;
++import org.terrier.structures.DocumentIndexEntry;
++import org.terrier.structures.FSOMapFileLexiconOutputStream;
++import org.terrier.structures.FieldDocumentIndexEntry;
++import org.terrier.structures.FieldLexiconEntry;
++import org.terrier.structures.Index;
++import org.terrier.structures.IndexOnDisk;
++import org.terrier.structures.IndexUtil;
++import org.terrier.structures.LexiconOutputStream;
++import org.terrier.structures.SimpleDocumentIndexEntry;
++import org.terrier.structures.indexing.CompressingMetaIndexBuilder;
++import org.terrier.structures.indexing.DocumentIndexBuilder;
++import org.terrier.structures.indexing.MetaIndexBuilder;
++import org.terrier.structures.indexing.singlepass.BasicSinglePassIndexer;
++import org.terrier.structures.indexing.singlepass.FieldPostingInRun;
++import org.terrier.structures.indexing.singlepass.RunsMerger;
++import org.terrier.structures.indexing.singlepass.SimplePostingInRun;
++import org.terrier.utility.ApplicationSetup;
++import org.terrier.utility.ArrayUtils;
++import org.terrier.utility.FieldScore;
++import org.terrier.utility.Files;
++import org.terrier.utility.TerrierTimer;
++import org.terrier.utility.io.HadoopPlugin;
++import org.terrier.utility.io.HadoopPlugin.JobFactory;
++import org.terrier.utility.io.HadoopUtility;
++import org.terrier.utility.io.WrappedIOException;
++//import org.apache.hadoop.mapred.OutputCollector;
++
++/**
++ * Single Pass MapReduce indexer. 
++ * <p><h3>Map phase processing</h3>
++ * Indexes as a Map task, taking in a series of documents, emitting posting lists for terms as
++ * memory becomes exhausted. Two side-files are created for each map task: the first (run files) takes note of how many documents were indexed
++ * for each flush and for each map; the second contains the statistics for each document in a minature document index
++ * </p>
++ * <p><h3>Reduce phase processing</h3>
++ * All posting lists for each term are read in, one term at a time. Using the run files, the posting lists are output into the final inverted
++ * file, with all document ids corrected. Lastly, when all terms have been processed, the document indexes are merged into the final document
++ * index, and the lexicon hash and lexid created.
++ * </p>
++ * <p><h3>Partitioned Reduce processing</h3>
++ * Normally, the MapReduce indexer is used with a single reducer. However, if the partitioner is used, multiple reduces can run concurrently,
++ * building several final indices. In doing so, a large collection can be indexed into several output indices, which may be useful for distributed
++ * retrieval.
++ * </p>
++ * @author Richard McCreadie and Craig Macdonald
++ * @since 2.2
++  */
++
++
++
++public class Hadoop_BasicSinglePassIndexer2 
++{
++	
++	/** the logger for this class */
++	protected static final Logger logger = LoggerFactory.getLogger(Hadoop_BasicSinglePassIndexer2.class);
++	
++	/** TREC-388: disable per-flush compression of docids, as docid alignment problems
++	  * can arise if map tasks are restarted. Be vary careful of changing this.
++	  */
++	static final boolean RESET_IDS_ON_FLUSH = false;
++	
++	/**
++	 * main
++	 * @param args
++	 * @throws Exception
++	 */
++	public static void main(String[] args) throws Exception
++   {
++       if (args.length == 2 && args[0].equals("--finish"))
++       {
++           final JobFactory jf = HadoopPlugin.getJobFactory("HOD-TerrierIndexing");
++           if (jf == null)
++               throw new Exception("Could not get JobFactory from HadoopPlugin");
++           try{
++           	finish(ApplicationSetup.TERRIER_INDEX_PATH, Integer.parseInt(args[1]), jf);
++           } catch (Exception e) {
++           	logger.error("Couldn't finish index", e);
++           } finally {
++           	jf.close();
++           }
++       }
++       else
++       {
++       	System.err.println("Usage: Hadoop_BasicSinglePassIndexer [--finish numberOfReduceTasks]");
++       }
++   }
++	/**
++	 * finish
++	 * @param destinationIndexPath
++	 * @param numberOfReduceTasks
++	 * @param jf
++	 * @throws Exception
++	 */
++	public static void finish(final String destinationIndexPath, int numberOfReduceTasks, final JobFactory jf) throws Exception
++	{
++		final String[] reverseMetaKeys = ApplicationSetup.getProperty("indexer.meta.reverse.keys", "").split("\\s*,\\s*");
++		Index.setIndexLoadingProfileAsRetrieval(false);
++		if (numberOfReduceTasks == 1)
++		{			
++			IndexOnDisk index = Index.createIndex(destinationIndexPath, ApplicationSetup.TERRIER_INDEX_PREFIX);
++			if (index == null)
++			{
++				throw new IOException("No such index ["+destinationIndexPath+","+ApplicationSetup.TERRIER_INDEX_PREFIX+"]");
++			}
++			CompressingMetaIndexBuilder.reverseAsMapReduceJob(index, "meta", reverseMetaKeys, jf);
++			index.close();
++			return;
++		}
++		//make a list of MR jobs in separate threads
++		List<Thread> threads = new ArrayList<Thread>(numberOfReduceTasks);
++		for(int i=0;i<numberOfReduceTasks;i++)
++		{
++			final int id = i;
++			threads.add(new Thread() {
++					@Override
++					public void run() {
++						try{
++							IndexOnDisk index = Index.createIndex(destinationIndexPath, ApplicationSetup.TERRIER_INDEX_PREFIX+"-"+id);
++							CompressingMetaIndexBuilder.reverseAsMapReduceJob(index, "meta", reverseMetaKeys, jf);
++							index.close();
++						} catch (Exception e) {
++							logger.error("Problem finishing meta", e);
++							e.printStackTrace();
++						}
++					}				
++				});			
++		}
++		//start the threads
++		for(Thread t : threads)
++			t.start();
++		//wait for the threads to end
++		for(Thread t : threads)
++			t.join();
++	}
++	
++	static enum Counters { 
++		INDEXED_DOCUMENTS, INDEXED_EMPTY_DOCUMENTS, INDEXER_FLUSHES, INDEXED_TOKENS, INDEXED_POINTERS;
++	};
++	
++	
++	public static class NewMapper extends org.apache.hadoop.mapreduce.Mapper<Text, SplitAwareWrapper<Document>, SplitEmittedTerm, MapEmittedPostingList>
++	{
++		Hadoop_BasicSinglePassIndexer2_Mapper inner;
++		
++		
++		@Override
++		protected void setup(
++				org.apache.hadoop.mapreduce.Mapper<Text, SplitAwareWrapper<Document>, SplitEmittedTerm, MapEmittedPostingList>.Context context)
++				throws IOException, InterruptedException {
++			super.setup(context);
++			inner = new Hadoop_BasicSinglePassIndexer2_Mapper();
++			inner.configure(context);
++		}
++
++
++		@Override
++		protected void map(
++				Text key,
++				SplitAwareWrapper<Document> value,
++				org.apache.hadoop.mapreduce.Mapper<Text, SplitAwareWrapper<Document>, SplitEmittedTerm, MapEmittedPostingList>.Context context)
++				throws IOException, InterruptedException 
++		{
++			inner.map(key, value, context);
++		}
++
++		
++		@Override
++		protected void cleanup(
++				org.apache.hadoop.mapreduce.Mapper<Text, SplitAwareWrapper<Document>, SplitEmittedTerm, MapEmittedPostingList>.Context context)
++				throws IOException, InterruptedException {
++			super.cleanup(context);
++			inner.close();
++		}
++		
++	}
++	
++	public static class NewReducer extends org.apache.hadoop.mapreduce.Reducer<SplitEmittedTerm, MapEmittedPostingList, Object, Object>
++	{
++		Hadoop_BasicSinglePassIndexer2_Reducer inner;
++
++		@Override
++		protected void cleanup(
++				org.apache.hadoop.mapreduce.Reducer<SplitEmittedTerm, MapEmittedPostingList, Object, Object>.Context context)
++				throws IOException, InterruptedException {
++			super.cleanup(context);
++			inner.close();
++		}
++
++		@Override
++		protected void reduce(
++				SplitEmittedTerm key,
++				Iterable<MapEmittedPostingList> valueList,
++				org.apache.hadoop.mapreduce.Reducer<SplitEmittedTerm, MapEmittedPostingList, Object, Object>.Context context)
++				throws IOException, InterruptedException {
++			inner.reduce(key, valueList.iterator(), context);
++		}
++
++		@Override
++		protected void setup(
++				org.apache.hadoop.mapreduce.Reducer<SplitEmittedTerm, MapEmittedPostingList, Object, Object>.Context context)
++				throws IOException, InterruptedException {
++			super.setup(context);
++			try{
++				inner.configure(context);
++			} catch (Exception e) {
++				throw new WrappedIOException(e);
++			}
++		}
++		
++		
++//		@Override
++//		protected void setup(
++//				org.apache.hadoop.mapreduce.Mapper<Text, SplitAwareWrapper<Document>, SplitEmittedTerm, MapEmittedPostingList>.Context context)
++//				throws IOException, InterruptedException {
++//			super.setup(context);
++//			inner = new Hadoop_BasicSinglePassIndexer2_Mapper();
++//			inner.configure(context);
++//		}
++//
++//
++//		@Override
++//		protected void map(
++//				Text key,
++//				SplitAwareWrapper<Document> value,
++//				org.apache.hadoop.mapreduce.Mapper<Text, SplitAwareWrapper<Document>, SplitEmittedTerm, MapEmittedPostingList>.Context context)
++//				throws IOException, InterruptedException 
++//		{
++//			inner.map(key, value, context);
++//		}
++//
++//		
++//		@Override
++//		protected void cleanup(
++//				org.apache.hadoop.mapreduce.Mapper<Text, SplitAwareWrapper<Document>, SplitEmittedTerm, MapEmittedPostingList>.Context context)
++//				throws IOException, InterruptedException {
++//			super.cleanup(context);
++//			inner.close();
++//		}
++		
++	}
++
++	public static class Hadoop_BasicSinglePassIndexer2_Mapper 
++		extends BasicSinglePassIndexer
++	{
++
++		/** JobConf of the current running job */	
++		protected JobContext jc;
++	
++		/** The split that these documents came form **/
++		protected int splitnum;
++		
++		protected boolean start;
++		
++		
++		/**
++		 * Empty constructor
++		 */
++		public Hadoop_BasicSinglePassIndexer2_Mapper() {
++			super(0,0,0);
++			numberOfDocuments = currentId = numberOfDocsSinceCheck = numberOfDocsSinceFlush = numberOfUniqueTerms = 0;
++			numberOfTokens = numberOfPointers = 0;
++			flushNo=0;
++			flushList = new LinkedList<Integer>();
++		}
++		
++		@Override
++		/** Hadoop indexer does not have the consideration of boundary documents. */
++		protected void load_builder_boundary_documents() { }
++		
++	
++		/* ==============================================================
++		 * Map implementation from here down
++		 * ==============================================================
++		 */
++		
++		/** output collector for the current map indexing process */
++		//protected OutputCommitter outputPostingListCollector;
++		
++		/** Current map number */
++		protected String mapTaskID;
++		/** How many flushes have we made */
++		protected int flushNo;
++	
++		/** OutputStream for the the data on the runs (runNo, flushes etc) */
++		protected DataOutputStream RunData;
++		/** List of how many documents are in each flush we have made */
++		protected LinkedList<Integer> flushList;
++		
++		public void configure(org.apache.hadoop.mapreduce.Mapper<Text, SplitAwareWrapper<Document>, SplitEmittedTerm, MapEmittedPostingList>.Context _jc) 
++		{
++			//1. configure application
++			try{ 
++				HadoopUtility.loadTerrierJob(_jc.getConfiguration());
++			} catch (Exception e) {
++				throw new Error("Cannot load ApplicationSetup", e);
++			}
++			
++			this.jc = _jc;
++			try{
++			
++			super.init();
++			
++			
++			Path indexDestination = FileOutputFormat.getOutputPath(_jc); // FileOutputFormat.getWorkOutputPath(jc);
++	//		if (! FileSystem.get(jc).mkdirs(indexDestination))
++	//		{
++	//			throw new IOException("1 Unable to make WorkOuputPath for " + jc.get("mapreduce.task.attempt.id") + " at " + indexDestination.toString());
++	//		}
++			
++			if (! Files.mkdir(indexDestination.toString()))
++			{
++				throw new IOException("2 Unable to make WorkOuputPath for " + jc.getConfiguration().get("mapreduce.task.attempt.id") + " at " + indexDestination.toString());
++			}
++			mapTaskID = TaskAttemptID.forName(jc.getConfiguration().get("mapreduce.task.attempt.id")).getTaskID().toString();
++			currentIndex = Index.createNewIndex(indexDestination.toString(), mapTaskID);
++			maxMemory = Long.parseLong(ApplicationSetup.getProperty("indexing.singlepass.max.postings.memory", "0"));
++			//during reduce, we dont want to load indices into memory, as we only use
++			//them as streams
++			currentIndex.setIndexProperty("index.preloadIndices.disabled", "true");
++			RunData = new DataOutputStream(
++					Files.writeFileStream(
++							new Path(indexDestination, mapTaskID+".runs").toString())
++					);
++			RunData.writeUTF(mapTaskID);
++			start = true;
++			createMemoryPostings();
++			super.emptyDocIndexEntry = new SimpleDocumentIndexEntry();
++			super.docIndexBuilder = new DocumentIndexBuilder(currentIndex, "document");
++			super.metaBuilder = createMetaIndexBuilder();
++			emptyDocIndexEntry = (FieldScore.FIELDS_COUNT > 0) ? new FieldDocumentIndexEntry(FieldScore.FIELDS_COUNT) : new SimpleDocumentIndexEntry();
++			} catch (Exception e) {
++				throw new Error(e);
++			}
++		}
++		
++		
++		
++		protected MetaIndexBuilder createMetaIndexBuilder()
++		{
++			final String[] forwardMetaKeys = ApplicationSetup.getProperty("indexer.meta.forward.keys", "docno").split("\\s*,\\s*");
++			final int[] metaKeyLengths = parseInts(ApplicationSetup.getProperty("indexer.meta.forward.keylens", "20").split("\\s*,\\s*"));
++			//no reverse metadata during main indexing, pick up as separate job later
++			return new CompressingMetaIndexBuilder(currentIndex, forwardMetaKeys, metaKeyLengths, new String[0]);
++		}
++		
++		@edu.umd.cs.findbugs.annotations.SuppressWarnings(
++				value="DM_GC",
++				justification="Forcing GC is an essential part of releasing" +
++						"memory for further indexing")
++		@Override
++		/** causes the posting lists built up in memory to be flushed out */
++		protected void forceFlush() throws IOException
++		{
++			logger.info("Map "+mapTaskID+", flush requested, containing "+numberOfDocsSinceFlush+" documents, flush "+flushNo);
++			if (mp == null)
++				throw new IOException("Map flushed before any documents were indexed");
++			mp.finish(new Hadoop2RunWriter(currentReporter, mapTaskID, splitnum, flushNo));
++			RunData.writeInt(currentId);
++			if (currentReporter != null)
++				currentReporter.getCounter(Counters.INDEXER_FLUSHES).increment(1);
++			System.gc();
++			createMemoryPostings();
++			memoryCheck.reset();
++			numberOfDocsSinceFlush = 0;
++			if (RESET_IDS_ON_FLUSH)
++				currentId = 0;
++			flushNo++;
++		}
++		
++		/**
++		 * Map processes a single document. Stores the terms in the document along with the posting list
++		 * until memory is full or all documents in this map have been processed then writes then to
++		 * the output collector.  
++		 * @param key - Wrapper for Document Number
++		 * @param value - Wrapper for Document Object
++		 * @param _outputPostingListCollector Collector for emitting terms and postings lists
++		 * @throws IOException
++		 */
++		public void map(
++				Text key, SplitAwareWrapper<Document> value, 
++				org.apache.hadoop.mapreduce.Mapper<Text, SplitAwareWrapper<Document>, SplitEmittedTerm, MapEmittedPostingList>.Context context) 
++			throws IOException 
++		{
++			final String docno = key.toString();
++			currentReporter = context;
++			context.setStatus("Currently indexing "+docno);
++			final Document doc = value.getObject();
++			
++			if (start) {
++				splitnum = value.getSplitIndex();
++				System.out.println(splitnum);
++				//RunData.writeInt(splitnum);
++				start = false;
++			}
++			
++			/* setup for parsing */
++			createDocumentPostings();
++			String term;//term we're currently processing
++			numOfTokensInDocument = 0;
++			//numberOfDocuments++;
++			//get each term in the document
++			while (!doc.endOfDocument()) {
++				context.progress();
++				if ((term = doc.getNextTerm())!=null && !term.equals("")) {
++					termFields = doc.getFields();
++					/* pass term into TermPipeline (stop, stem etc) */
++					pipeline_first.processTerm(term);
++	
++					/* the term pipeline will eventually add the term to this object. */
++				}
++				if (MAX_TOKENS_IN_DOCUMENT > 0 &&
++						numOfTokensInDocument > MAX_TOKENS_IN_DOCUMENT)
++					break;
++			}
++			
++			//if we didn't index all tokens from document,
++			//we need tocurrentId get to the end of the document.
++			while (!doc.endOfDocument()){
++				doc.getNextTerm();
++			}
++			/* we now have all terms in the DocumentTree, so we save the document tree */
++			if (termsInDocument.getDocumentLength() == 0)
++			{	/* this document is empty, add the minimum to the document index */
++				// Nothing in the ifile
++				indexEmpty(doc.getAllProperties());
++			}
++			else
++			{	/* index this document */
++				try{
++					indexDocument(doc.getAllProperties(), termsInDocument);
++					numberOfTokens += numOfTokensInDocument;
++					context.getCounter(Counters.INDEXED_TOKENS).increment(numOfTokensInDocument);
++					context.getCounter(Counters.INDEXED_POINTERS).increment(termsInDocument.getNumberOfPointers());
++				} catch (IOException ioe) {
++					throw ioe;				
++				} catch (Exception e) {
++					throw new WrappedIOException(e);
++				}
++			}
++			termsInDocument.clear();
++			context.getCounter(Counters.INDEXED_DOCUMENTS).increment(1);
++		}
++		
++		protected org.apache.hadoop.mapreduce.Mapper<Text, SplitAwareWrapper<Document>, SplitEmittedTerm, MapEmittedPostingList>.Context currentReporter;
++		
++		/**
++		 * Write the empty document to the inverted index
++		 */
++		protected void indexEmpty(final Map<String,String> docProperties) throws IOException
++		{
++			/* add doc to documentindex, even though it's empty */
++			if(IndexEmptyDocuments)
++			{	
++				logger.warn("Adding empty document "+docProperties.get("docno"));
++				docIndexBuilder.addEntryToBuffer(emptyDocIndexEntry);
++				metaBuilder.writeDocumentEntry(docProperties);
++				currentId++;
++				numberOfDocuments++;
++				currentReporter.getCounter(Counters.INDEXED_EMPTY_DOCUMENTS).increment(1);
++			}
++		}
++		
++		/** Finish up the map processing. Forces a flush, then writes out the final run data */
++		public void close() throws IOException
++		{
++			forceFlush();
++			docIndexBuilder.finishedCollections();
++			currentIndex.setIndexProperty("index.inverted.fields.count", ""+FieldScore.FIELDS_COUNT);
++			if (FieldScore.FIELDS_COUNT > 0)
++			{
++				currentIndex.addIndexStructure("document-factory", FieldDocumentIndexEntry.Factory.class.getName(), "java.lang.String", "${index.inverted.fields.count}");
++			}
++			else
++			{
++				currentIndex.addIndexStructure("document-factory", SimpleDocumentIndexEntry.Factory.class.getName(), "", "");
++			}
++			metaBuilder.close();
++			currentIndex.flush();
++			currentIndex.close();
++			RunData.writeInt(-1);
++			RunData.writeInt(numberOfDocuments);
++			RunData.writeInt(splitnum);
++			RunData.close();
++			logger.info("Map "+mapTaskID+ " finishing, indexed "+numberOfDocuments+ " in "+(flushNo-1)+" flushes");
++		}
++	}
++
++	/* ==============================================================
++	 * Reduce implementation from here down
++	 * ==============================================================
++	 */
++	
++	public static class Hadoop_BasicSinglePassIndexer2_Reducer 
++		extends BasicSinglePassIndexer
++	{
++	
++		/** JobConf of the current running job */	
++		protected JobContext jc;
++	
++		
++		/**
++		 * Empty constructor
++		 */
++		public Hadoop_BasicSinglePassIndexer2_Reducer() {
++			super(0,0,0);
++			numberOfDocuments = currentId = numberOfDocsSinceCheck = numberOfDocsSinceFlush = numberOfUniqueTerms = 0;
++			numberOfTokens = numberOfPointers = 0;
++			//flushNo=0;
++			//flushList = new LinkedList<Integer>();
++		}
++		
++		/** OutputStream for the Lexicon*/ 
++		protected LexiconOutputStream<String> lexstream;
++		/** runIterator factory being used to generate RunIterators */
++		protected HadoopRunIteratorFactory runIteratorF = null;
++		/** records whether the reduce() has been called for the first time */
++		protected boolean reduceStarted = false;
++		
++		protected boolean mutipleIndices = true;
++		protected int reduceId;
++		protected String[] MapIndexPrefixes = null;
++		protected org.apache.hadoop.mapreduce.Reducer<SplitEmittedTerm, MapEmittedPostingList, Object, Object>.Context lastReporter = null;
++		protected boolean start;
++		
++
++		public void configure(org.apache.hadoop.mapreduce.Reducer<SplitEmittedTerm, MapEmittedPostingList, Object, Object>.Context job) throws Exception
++		{	
++			//1. configure application
++			//try{ 
++				this.jc = job;
++				HadoopUtility.loadTerrierJob(job.getConfiguration());
++			//} catch (Exception e) {
++			//	throw new Error("Cannot load ApplicationSetup", e);
++			//}
++			
++			super.init();
++			start = true;
++			//load in the current index
++			final Path indexDestination = FileOutputFormat.getWorkOutputPath(job);
++			Files.mkdir(path = indexDestination.toString());
++			final String indexDestinationPrefix = jc.getConfiguration().get("indexing.hadoop.prefix", "data");
++			reduceId = TaskAttemptID.forName(jc.getConfiguration().get("mapred.task.id")).getTaskID().getId();
++			indexDestination.toString();
++			mutipleIndices = jc.getConfiguration().getBoolean("indexing.hadoop.multiple.indices", true);
++			if (jc.getNumReduceTasks() > 1)
++			{
++				//gets the reduce number and suffices this to the index prefix
++				prefix = indexDestinationPrefix + "-"+reduceId;
++			}
++			else
++			{
++				prefix = indexDestinationPrefix;
++			}
++			
++			currentIndex = Index.createNewIndex(path, prefix);
++			
++			super.merger = createtheRunMerger();
++			reduceStarted = false;	
++		}
++		
++		protected LinkedList<MapData> loadRunData() throws IOException 
++		{
++			// Load in Run Data
++			ArrayList<String> mapTaskIDs = new ArrayList<String>();
++			final LinkedList<MapData> runData = new LinkedList<MapData>();
++			DataInputStream runDataIn;
++		
++			final String jobId = TaskAttemptID.forName(jc.getConfiguration().get("mapred.task.id")).getJobID().toString().replaceAll("job", "task");
++			
++			final FileStatus[] files = FileSystem.get(jc.getConfiguration()).listStatus(
++				FileOutputFormat.getOutputPath(jc), 
++				new org.apache.hadoop.fs.PathFilter()
++				{ 
++					public boolean accept(Path path)
++					{					
++						final String name = path.getName();
++						//1. is this a run file
++						if (!(  name.startsWith( jobId )  && name.endsWith(".runs")))
++							return false;
++						return true;
++					}
++				}
++			);
++	
++			if (files == null || files.length == 0)
++			{
++				throw new IOException("No run status files found in "+FileOutputFormat.getOutputPath(jc));
++			}
++			
++			final int thisPartition = TaskAttemptID.forName(jc.getConfiguration().get("mapred.task.id")).getTaskID().getId();
++			final SplitEmittedTerm.SETPartitioner partitionChecker = new SplitEmittedTerm.SETPartitioner();
++			partitionChecker.configure(jc);
++			
++			
++			MapData tempHRD;
++			for (FileStatus file : files) 
++			{
++				logger.info("Run data file "+ file.getPath().toString()+" has length "+Files.length(file.getPath().toString()));
++				runDataIn = new DataInputStream(Files.openFileStream(file.getPath().toString()));
++				tempHRD = new MapData(runDataIn);
++				//check to see if this file contained our split information
++				if (mutipleIndices && partitionChecker.calculatePartition(tempHRD.getSplitnum(), jc.getNumReduceTasks()) != thisPartition)
++					continue;
++				
++				mapTaskIDs.add(tempHRD.getMap());
++				runData.add(tempHRD);
++				runDataIn.close();
++			}
++			// Sort by splitnum
++			Collections.sort(runData);
++			Collections.sort(mapTaskIDs, new IDComparator(runData));
++			// A list of the index shards
++			MapIndexPrefixes = mapTaskIDs.toArray(new String[0]);
++			return runData;
++		}
++		
++		/**
++		 * Merge the postings for the current term, converts the document ID's in the
++		 * postings to be relative to one another using the run number, number of documents
++		 * covered in each run, the flush number for that run and the number of documents
++		 * flushed.
++		 * @param mapData - info about the runs(maps) and the flushes
++		 */
++		public void startReduce(LinkedList<MapData> mapData) throws IOException
++		{
++			logger.info("The number of Reduce Tasks being used : "+jc.getNumReduceTasks());
++			((HadoopRunsMerger)(super.merger)).beginMerge(mapData);
++			this.currentIndex.setIndexProperty("max.term.length", ApplicationSetup.getProperty("max.term.length", ""+20));
++			lexstream = new FSOMapFileLexiconOutputStream(this.currentIndex, "lexicon", 
++					(FieldScore.FIELDS_COUNT  > 0 ? FieldLexiconEntry.Factory.class : BasicLexiconEntry.Factory.class));
++			// Tell the merger how many to Reducers to merge for
++			((HadoopRunsMerger) merger).setNumReducers(
++					mutipleIndices ? jc.getNumReduceTasks() : 1);
++		}
++		
++		/** Main reduce algorithm step. Called for every term in the merged index, together with accessors
++		 * to the posting list information that has been written.
++		 * This reduce has no output.
++		 * @param Term indexing term which we are reducing the posting lists into
++		 * @param postingIterator Iterator over the temporary posting lists we have for this term
++		 * @param output Unused output collector
++		 * @param reporter Used to report progress
++		 */
++		public void reduce(
++				SplitEmittedTerm Term, 
++				Iterator<MapEmittedPostingList> postingIterator, 
++				org.apache.hadoop.mapreduce.Reducer<SplitEmittedTerm, MapEmittedPostingList, Object, Object>.Context context)
++			throws IOException
++		{
++			//if (logger.isDebugEnabled()) logger.debug("Reduce for term "+Term.getText());
++			context.setStatus("Reducer is merging term " + Term.getTerm());
++			if (! reduceStarted)
++			{
++				final LinkedList<MapData> runData = loadRunData();
++	        	startReduce(runData);
++				reduceStarted = true;
++			}
++			String term = Term.getTerm().trim();
++			if (term.length() == 0)
++				return;
++			runIteratorF.setRunPostingIterator(postingIterator);
++			runIteratorF.setTerm(term);
++			try{
++				merger.mergeOne(lexstream);
++			} catch (Exception e) {
++				throw new WrappedIOException(e);
++			}
++			context.progress();
++			this.lastReporter = context;
++		}
++	
++		/** Merges the simple document indexes made for each map, instead creating the final document index */	
++		@SuppressWarnings("unchecked")
++		protected void mergeDocumentIndex(Index[] src, int numdocs) throws IOException
++		{
++			logger.info("Merging document and meta indices");
++			final DocumentIndexBuilder docidOutput = new DocumentIndexBuilder(currentIndex, "document");
++			final MetaIndexBuilder metaBuilder = this.createMetaIndexBuilder();
++			int docCount =-1;
++			TerrierTimer tt = new TerrierTimer("Merging document & meta indices", numdocs);
++			tt.start();
++			try{ 
++				for (Index srcIndex: src)
++				{
++					final Iterator<DocumentIndexEntry> docidInput = (Iterator<DocumentIndexEntry>)srcIndex.getIndexStructureInputStream("document");
++					final Iterator<String[]> metaInput1 = (Iterator<String[]>)srcIndex.getIndexStructureInputStream("meta");
++				    while (docidInput.hasNext())
++					{
++						docCount++;
++						docidOutput.addEntryToBuffer(docidInput.next());
++				        metaBuilder.writeDocumentEntry(metaInput1.next());
++				        this.lastReporter.progress();
++				        tt.increment();
++					}
++				    IndexUtil.close(docidInput);
++				    IndexUtil.close(metaInput1);
++				}
++			} finally {
++				tt.finished();
++			}
++			metaBuilder.close();
++			docidOutput.finishedCollections();
++			if (FieldScore.FIELDS_COUNT > 0)
++			{
++				currentIndex.addIndexStructure("document-factory", FieldDocumentIndexEntry.Factory.class.getName(), "java.lang.String", "${index.inverted.fields.count}");
++			}
++			else
++			{
++				currentIndex.addIndexStructure("document-factory", SimpleDocumentIndexEntry.Factory.class.getName(), "", "");
++			}
++			
++			//check document counts
++			if (docCount != numdocs)
++			{
++				logger.warn("Mismatch between expected ("+numdocs+") and found document counts ("+docCount+")");
++			}
++			
++			logger.info("Finished merging document indices from "+src.length+" map tasks: "+docCount +" documents found");
++		}
++	
++		/** finishes the reduce step, by closing the lexicon and inverted file output,
++	 	  * building the lexicon hash and index, and merging the document indices created
++		  * by the map tasks. The output index finalised */
++		public void close() throws IOException {
++			
++			if (! reduceStarted)
++			{
++				logger.warn("No terms were input, skipping reduce close");
++				return;
++			}
++			//generate final index structures
++			//1. any remaining lexicon terms
++			merger.endMerge(lexstream);
++			//2. the end of the inverted file
++			merger.getBos().close();
++			lexstream.close();
++			
++			
++			//index updating is ONLY for 
++			currentIndex.addIndexStructure(
++					"inverted",
++					invertedIndexClass,
++					"org.terrier.structures.IndexOnDisk,java.lang.String,org.terrier.structures.DocumentIndex,java.lang.Class", 
++					"index,structureName,document,"+ 
++						(FieldScore.FIELDS_COUNT > 0
++							? fieldInvertedIndexPostingIteratorClass
++							: basicInvertedIndexPostingIteratorClass ));
++			currentIndex.addIndexStructureInputStream(
++	                "inverted",
++	                invertedIndexInputStreamClass,
++	                "org.terrier.structures.IndexOnDisk,java.lang.String,java.util.Iterator,java.lang.Class",
++	                "index,structureName,lexicon-entry-inputstream,"+
++	                	(FieldScore.FIELDS_COUNT > 0
++							? fieldInvertedIndexPostingIteratorClass
++							: basicInvertedIndexPostingIteratorClass ));
++			currentIndex.setIndexProperty("index.inverted.fields.count", ""+FieldScore.FIELDS_COUNT );
++			currentIndex.setIndexProperty("index.inverted.fields.names", ArrayUtils.join(FieldScore.FIELD_NAMES, ","));
++			
++			
++			//3. finalise the lexicon
++			currentIndex.setIndexProperty("num.Terms",""+ lexstream.getNumberOfTermsWritten() );
++			currentIndex.setIndexProperty("num.Tokens",""+lexstream.getNumberOfTokensWritten() );
++			currentIndex.setIndexProperty("num.Pointers",""+lexstream.getNumberOfPointersWritten() );
++			if (FieldScore.FIELDS_COUNT > 0)
++				currentIndex.addIndexStructure("lexicon-valuefactory", FieldLexiconEntry.Factory.class.getName(), "java.lang.String", "${index.inverted.fields.count}");
++			
++			if (lexstream.getNumberOfTermsWritten() == 0)
++			{
++				logger.warn("Lexicon wrote no terms, but reduceStarted = "+ reduceStarted);
++			}
++			
++			this.finishedInvertedIndexBuild();
++				
++			
++			//the document indices are only merged if we are creating multiple indices
++			//OR if this is the first reducer for a job creating a single index
++			if (mutipleIndices || reduceId == 0)
++			{
++				//4. document index
++				Index[] sourceIndices = new Index[MapIndexPrefixes.length];
++				int numdocs = 0;
++			 	for (int i= 0; i<MapIndexPrefixes.length;i++)
++				{
++					sourceIndices[i] = Index.createIndex(FileOutputFormat.getOutputPath(jc).toString(), MapIndexPrefixes[i]);
++					if (sourceIndices[i] == null)
++						throw new IOException("Could not load index from ("
++							+FileOutputFormat.getOutputPath(jc).toString()+","+ MapIndexPrefixes[i] +") because "
++							+Index.getLastIndexLoadError());
++					numdocs += sourceIndices[i].getCollectionStatistics().getNumberOfDocuments();
++				}
++			 	this.mergeDocumentIndex(sourceIndices, numdocs);
++			 	
++			 	//5. close the map phase indices
++				for(Index i : sourceIndices)
++				{
++					i.close();
++				}
++			}
++			currentIndex.flush();
++		}
++	
++		/** Creates the RunsMerger and the RunIteratorFactory */
++		protected RunsMerger createtheRunMerger() {
++			logger.info("creating run merged with fields="+useFieldInformation);
++			runIteratorF = 
++				new HadoopRunIteratorFactory(null, 
++					(useFieldInformation 
++						? FieldPostingInRun.class
++						: SimplePostingInRun.class),
++					super.numFields);
++			HadoopRunsMerger tempRM = new HadoopRunsMerger(runIteratorF);
++			try{
++				tempRM.setBos(new BitOutputStream(
++						currentIndex.getPath() + ApplicationSetup.FILE_SEPARATOR 
++						+ currentIndex.getPrefix() + ".inverted" + BitIn.USUAL_EXTENSION));
++			} catch (IOException ioe) {
++				ioe.printStackTrace();
++			}
++			return (RunsMerger)tempRM;
++		}
++	}
++
++}
+diff --git a/src/core/org/terrier/structures/indexing/singlepass/hadoop/SplitEmittedTerm.java b/src/core/org/terrier/structures/indexing/singlepass/hadoop/SplitEmittedTerm.java
+index 07b6851..da170c9 100644
+--- a/src/core/org/terrier/structures/indexing/singlepass/hadoop/SplitEmittedTerm.java
++++ b/src/core/org/terrier/structures/indexing/singlepass/hadoop/SplitEmittedTerm.java
+@@ -41,6 +41,8 @@ import org.apache.hadoop.io.WritableUtils;
+ import org.apache.hadoop.mapred.JobConf;
+ import org.apache.hadoop.mapred.JobConfigurable;
+ import org.apache.hadoop.mapred.Partitioner;
++import org.apache.hadoop.mapreduce.JobContext;
++import org.apache.hadoop.mapreduce.MRJobConfig;
+ 
+ /**
+  * Represents a Term key used during MapReduce Indexing. Term keys are emitted from
+@@ -309,8 +311,12 @@ public class SplitEmittedTerm implements WritableComparable<SplitEmittedTerm>{
+ 			// there is one split per map task
+ 			numSplits = conf.getNumMapTasks();
+ 		}
++		
++		public void configure(JobContext jc) {
++			numSplits = jc.getConfiguration().getInt(MRJobConfig.NUM_MAPS, 1);
++		}
+ 	
+-		/** Retuns the partition for the specified term and posting list, given the specified
++		/** Returns the partition for the specified term and posting list, given the specified
+ 		 * number of partitions.
+ 		 */
+ 		public int getPartition(SplitEmittedTerm term, MapEmittedPostingList posting,
+diff --git a/src/core/org/terrier/utility/io/HadoopPlugin.java b/src/core/org/terrier/utility/io/HadoopPlugin.java
+index 047e491..fef1083 100644
+--- a/src/core/org/terrier/utility/io/HadoopPlugin.java
++++ b/src/core/org/terrier/utility/io/HadoopPlugin.java
+@@ -41,12 +41,13 @@ import org.apache.hadoop.fs.FileStatus;
+ import org.apache.hadoop.fs.Path;
+ import org.apache.hadoop.fs.permission.FsAction;
+ import org.apache.hadoop.mapred.JobConf;
++import org.apache.hadoop.mapreduce.Job;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.terrier.utility.ApplicationSetup;
+ import org.terrier.utility.Files;
+-import org.terrier.utility.KillHandler;
+ import org.terrier.utility.Files.FSCapability;
++import org.terrier.utility.KillHandler;
+ import org.terrier.utility.KillHandler.Killable;
+ 
+ /** This class provides the main glue between Terrier and Hadoop. It has several main roles:<ol>
+@@ -118,11 +119,18 @@ public class HadoopPlugin implements ApplicationSetup.TerrierApplicationPlugin
+ 		/** Make a new job */
+ 		public abstract JobConf newJob() throws Exception;
+ 		
+-		/** Add additional informatino to a MapReduce job about the Terrier configuration */
++		/** Make a new job */
++		public abstract org.apache.hadoop.mapreduce.Job newJob2() throws Exception;
++		
++		/** Add additional information to a MapReduce job about the Terrier configuration */
+ 		protected static void makeTerrierJob(JobConf jc) throws IOException {
+ 			HadoopUtility.makeTerrierJob(jc);
+ 		}
+ 		
++		protected static void makeTerrierJob(Job jc) throws IOException {
++			HadoopUtility.makeTerrierJob(jc);
++		}
++		
+ 		/** Finish with this job factory. If the JobFactory was created using HOD, then
+ 		  * the HOD job will also be ended */
+ 		public abstract void close();
+@@ -138,6 +146,15 @@ public class HadoopPlugin implements ApplicationSetup.TerrierApplicationPlugin
+ 			makeTerrierJob(rtr);
+ 			return rtr;
+ 		}
++		
++		public Job newJob2() throws Exception {
++			Job rtr = c != null ? Job.getInstance(c) : Job.getInstance();
++			makeTerrierJob(rtr);
++			return rtr;
++		}
++		
++		
++		
+ 		public void close() { }
+ 	}
+ 	
+@@ -266,6 +283,11 @@ public class HadoopPlugin implements ApplicationSetup.TerrierApplicationPlugin
+ 		public void kill() {
+ 			close();
+ 		}
++
++		@Override
++		public Job newJob2() throws Exception {
++			throw new UnsupportedOperationException();
++		}
+ 	}
+ 	
+ 	/** Get a JobFactory with the specified session name. This method attempts three processes, in order:
+@@ -273,7 +295,7 @@ public class HadoopPlugin implements ApplicationSetup.TerrierApplicationPlugin
+ 	  * <li>If the current/default Hadoop configuration has a real Hadoop cluster Job Tracker configured, then
+ 	  * that will be used. This requires that the <tt>mapred.job.tracker</tt> property in the haddop-site.xml
+ 	  * be configured.</li>
+-	  * <li>Next, it will attempt to use HOD to build a Hadoop MapReduce cluster. This requies the Terrier property
++	  * <li>Next, it will attempt to use HOD to build a Hadoop MapReduce cluster. This requires the Terrier property
+ 	  * relating to HOD be configured to point to the location of the HOD binary - <tt>plugin.hadoop.hod</tt></li>
+ 	  * <li>As a last resort, Terrier will use the local job tracker that Hadoop provides on the localhost. This is
+ 	  * useful for unit testing, however it does not support multiple reducers.</li> 
+@@ -312,6 +334,7 @@ public class HadoopPlugin implements ApplicationSetup.TerrierApplicationPlugin
+ 			}
+ 			//as a last resort, use the local Hadoop job tracker
+ 			logger.warn("No remote job tracker or HOD configuration found, using local job tracker");
++			System.err.println(globalConf.get("mapreduce.framework.name"));
+ 			return new DirectJobFactory(globalConf);
+ 		} catch (Exception e) {
+ 			logger.warn("Exception occurred while creating JobFactory", e);
+diff --git a/src/core/org/terrier/utility/io/HadoopUtility.java b/src/core/org/terrier/utility/io/HadoopUtility.java
+index 2bb4482..2f5192b 100644
+--- a/src/core/org/terrier/utility/io/HadoopUtility.java
++++ b/src/core/org/terrier/utility/io/HadoopUtility.java
+@@ -53,6 +53,7 @@ import org.apache.hadoop.mapred.JobConfigurable;
+ import org.apache.hadoop.mapred.Mapper;
+ import org.apache.hadoop.mapred.Reducer;
+ import org.apache.hadoop.mapred.TaskAttemptID;
++import org.apache.hadoop.mapreduce.Job;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.terrier.structures.Index;
+@@ -222,10 +223,15 @@ public class HadoopUtility {
+ 		}
+ 	}
+ 	
++
++	public static void makeTerrierJob(Job jc) {
++		makeTerrierJob(jc.getConfiguration());		
++	}
++	
+ 	/** When the current ApplicationSetup has been saved to the JobConf, by makeTerrierJob(),
+ 	 * use this method during the MR job to properly initialise Terrier.
+ 	 */
+-	public static void loadTerrierJob(JobConf jobConf) throws IOException
++	public static void loadTerrierJob(Configuration jobConf) throws IOException
+ 	{
+ 		if (jobConf.get("mapred.job.tracker").equals("local"))
+ 			return;
+@@ -425,7 +431,7 @@ public class HadoopUtility {
+ 		DistributedCache.addCacheFile(tempSysProperties.toUri().resolve(new URI("#system.properties")), jobConf);
+ 	}
+ 
+-	protected static Path findCacheFileByFragment(JobConf jc, String name) throws IOException
++	protected static Path findCacheFileByFragment(Configuration jc, String name) throws IOException
+ 	{
+ 		URI[] ps = DistributedCache.getCacheFiles(jc);
+ 		URI defaultFS = FileSystem.getDefaultUri(jc);
+@@ -443,7 +449,7 @@ public class HadoopUtility {
+ 		return null;
+ 	}
+ 	
+-	protected static void loadApplicationSetup(JobConf jobConf) throws IOException
++	protected static void loadApplicationSetup(Configuration jobConf) throws IOException
+ 	{
+ 		logger.info("Reloading Application Setup");
+ 		//we dont use Terrier's IO layer here, because it is not yet initialised
+@@ -504,4 +510,5 @@ public class HadoopUtility {
+ 		}
+ 		return false;
+ 	}
++
+ }
+diff --git a/src/test/org/terrier/structures/indexing/singlepass/hadoop/TestBitPostingIndexInputFormat.java b/src/test/org/terrier/structures/indexing/singlepass/hadoop/TestBitPostingIndexInputFormat.java
+index 41ccea5..5ebfa0a 100644
+--- a/src/test/org/terrier/structures/indexing/singlepass/hadoop/TestBitPostingIndexInputFormat.java
++++ b/src/test/org/terrier/structures/indexing/singlepass/hadoop/TestBitPostingIndexInputFormat.java
+@@ -58,7 +58,7 @@ import org.terrier.utility.FieldScore;
+ import org.terrier.utility.StaTools;
+ import org.terrier.utility.Wrapper.IntObjectWrapper;
+ import org.terrier.utility.io.HadoopUtility;
+-@SuppressWarnings("deprecation")
++
+ public class TestBitPostingIndexInputFormat extends ApplicationSetupBasedTest {
+ 
+ 	static boolean validPlatform()
+@@ -93,6 +93,10 @@ public class TestBitPostingIndexInputFormat extends ApplicationSetupBasedTest {
+ 		}
+ 		@Override
+ 		public void progress() {
++		}
++		@Override
++		public float getProgress() {
++			return 0;
+ 		}		
+ 	};
+ 	
+diff --git a/src/test/org/terrier/structures/indexing/singlepass/hadoop/WorkOutputPathMapTester.java b/src/test/org/terrier/structures/indexing/singlepass/hadoop/WorkOutputPathMapTester.java
+new file mode 100644
+index 0000000..baebd63
+--- /dev/null
++++ b/src/test/org/terrier/structures/indexing/singlepass/hadoop/WorkOutputPathMapTester.java
+@@ -0,0 +1,83 @@
++package org.terrier.structures.indexing.singlepass.hadoop;
++
++import static org.junit.Assert.assertTrue;
++
++import java.io.IOException;
++import java.util.StringTokenizer;
++
++import org.apache.hadoop.fs.FileSystem;
++import org.apache.hadoop.fs.Path;
++import org.apache.hadoop.io.IntWritable;
++import org.apache.hadoop.io.Text;
++import org.apache.hadoop.mapred.FileOutputFormat;
++import org.apache.hadoop.mapred.JobConf;
++import org.apache.hadoop.mapred.MapReduceBase;
++import org.apache.hadoop.mapred.OutputCollector;
++import org.apache.hadoop.mapred.Reporter;
++
++public class WorkOutputPathMapTester {
++
++	static abstract class OldMapReduceBase extends MapReduceBase
++		implements org.apache.hadoop.mapred.Mapper<Object, Text, Text, IntWritable>
++	{
++		 private final static IntWritable one = new IntWritable(1);
++		    private Text word = new Text();
++		   
++		JobConf job;
++		   
++		    
++		@Override
++		public void configure(JobConf job) {
++			super.configure(this.job = job);
++		}
++
++		@Override
++		public void map(Object key, Text value,
++				OutputCollector<Text, IntWritable> output, Reporter reporter)
++				throws IOException {
++			 StringTokenizer itr = new StringTokenizer(value.toString());
++		      while (itr.hasMoreTokens()) {
++		        word.set(itr.nextToken());
++		        output.collect(word, one);
++		      }
++		}		
++	}
++	
++	static public class OldMapReduceMap extends OldMapReduceBase
++	{
++
++		@Override
++		public void map(Object key, Text value,
++				OutputCollector<Text, IntWritable> output, Reporter reporter)
++				throws IOException {
++			
++			try {
++				Path p = FileOutputFormat.getWorkOutputPath(job);
++				assertTrue(FileSystem.get(job).exists(p));
++			} catch (Exception e) {
++				throw new RuntimeException(e);
++			}
++
++			super.map(key, value, output, reporter);
++		}
++		
++	}
++	
++	static public class OldMapReduceÇonfigure extends OldMapReduceBase
++	{
++		@Override
++		public void configure(JobConf job) {
++			super.configure(job);
++			
++			try {
++				Path p = FileOutputFormat.getWorkOutputPath(job);
++				assertTrue(FileSystem.get(job).exists(p));
++			} catch (Exception e) {
++				throw new RuntimeException(e);
++			}
++		}
++		
++		
++	}
++	
++}

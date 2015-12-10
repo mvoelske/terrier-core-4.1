@@ -33,7 +33,6 @@ import org.apache.hadoop.fs.Path;
  * @author Richard McCreadie and Craig Macdonald
  * @since 3.0
  */
-@SuppressWarnings("deprecation")
 public class FileSplit extends org.apache.hadoop.mapred.FileSplit {
 
 	/**

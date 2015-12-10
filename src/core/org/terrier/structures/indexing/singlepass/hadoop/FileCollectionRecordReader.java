@@ -55,7 +55,6 @@ import org.terrier.utility.io.CountingInputStream;
  * @author Richard McCreadie
  * @since 2.2
   */
-@SuppressWarnings("deprecation")
 public class FileCollectionRecordReader 
 		extends CollectionRecordReader<PositionAwareSplit<CombineFileSplit>> 
 		implements RecordReader<Text, SplitAwareWrapper<Document>>
