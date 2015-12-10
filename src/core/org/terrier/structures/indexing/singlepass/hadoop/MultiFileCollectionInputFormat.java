@@ -61,7 +61,6 @@ import org.terrier.indexing.Document;
  * @author Richard McCreadie and Craig Macdonald
  * @since 2.2
  */
-@SuppressWarnings("deprecation")
 public class MultiFileCollectionInputFormat extends MultiFileInputFormat<Text, SplitAwareWrapper<Document>>
 {
 

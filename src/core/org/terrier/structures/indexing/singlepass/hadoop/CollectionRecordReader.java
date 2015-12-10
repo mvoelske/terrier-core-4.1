@@ -47,7 +47,6 @@ import org.terrier.utility.io.WrappedIOException;
  * @author Craig Madonald and Richard McCreadie
   * @param <SPLITTYPE> The subclass of InputSplit that this class should work with
  */
-@SuppressWarnings("deprecation")
 public abstract class CollectionRecordReader<SPLITTYPE extends PositionAwareSplit<?>>
 	implements RecordReader<Text, SplitAwareWrapper<Document>>
 {

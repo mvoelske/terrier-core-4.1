@@ -173,7 +173,7 @@ public class Inv2DirectMultiReduce extends HadoopUtility.MapReduceBase<IntWritab
 			jc.setMapOutputKeyClass(VIntWritable.class);
 			jc.setMapOutputValueClass(mapOutputClass);
 			//a local jobtracker only runs a single reducer
-			if ((jc.get("mapred.job.tracker").equals("local")))
+			if (HadoopUtility.isLocalCluster(jc))
 			{
 				this.setNumberOfReduceTasks(1);
 				jc.setNumReduceTasks(1);

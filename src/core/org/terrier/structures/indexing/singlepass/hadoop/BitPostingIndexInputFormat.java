@@ -70,7 +70,6 @@ import org.terrier.utility.io.HadoopUtility;
  * <li><tt>mapred.bitpostingindex.lookup.structure</tt> - which structure's inputstream is the Iterator of BitIndexPointers?</li>
  * </ul>
  */
-@SuppressWarnings("deprecation")
 public class BitPostingIndexInputFormat extends FileInputFormat<IntWritable, IntObjectWrapper<IterablePosting>> {
 
 	final static Logger logger = LoggerFactory.getLogger(BitPostingIndexInputFormat.class);
@@ -467,7 +466,10 @@ public class BitPostingIndexInputFormat extends FileInputFormat<IntWritable, Int
 				public org.apache.hadoop.mapred.Counters.Counter getCounter(Enum arg0) {return null;}
 				public org.apache.hadoop.mapred.Counters.Counter getCounter(String arg0, String arg1) {return null;}
 				public void setStatus(String arg0) {}
-				public void progress() {}}
+				public void progress() {}
+				@Override
+				public float getProgress() {return 0;}
+				}
 			);
 			IntWritable key = rr.createKey();
 			IntObjectWrapper<IterablePosting> value = rr.createValue();

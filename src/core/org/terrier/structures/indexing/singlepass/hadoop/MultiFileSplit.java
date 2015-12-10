@@ -34,7 +34,6 @@ import org.apache.hadoop.mapred.JobConf;
  * @author Richard McCreadie and Craig Macdonald
  * @since 3.0
  */
-@SuppressWarnings("deprecation")
 public class MultiFileSplit extends org.apache.hadoop.mapred.lib.CombineFileSplit {
 
 	/**

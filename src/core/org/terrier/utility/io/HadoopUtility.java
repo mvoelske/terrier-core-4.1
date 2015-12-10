@@ -180,7 +180,7 @@ public class HadoopUtility {
 	 */
 	public static boolean setMapOutputCompression(JobConf conf)
 	{
-		if (! conf.get("mapred.job.tracker").equals("local"))
+		if (! isLocalCluster(conf))
 		{
 			conf.setMapOutputCompressorClass(GzipCodec.class);
 			conf.setCompressMapOutput(true);
@@ -198,7 +198,7 @@ public class HadoopUtility {
 	 */
 	public static boolean setJobOutputCompression(JobConf conf)
 	{
-		if (! conf.get("mapred.job.tracker").equals("local"))
+		if (! isLocalCluster(conf))
 		{
 			FileOutputFormat.setCompressOutput(conf, true);
 			FileOutputFormat.setOutputCompressorClass(conf, GzipCodec.class);
@@ -212,11 +212,12 @@ public class HadoopUtility {
 	 * leftover files */
 	public static void makeTerrierJob(JobConf jobConf) throws IOException
 	{
-		if (jobConf.get("mapred.job.tracker").equals("local"))
+		if (isLocalCluster(jobConf))
 			return;
 		try{
 			saveApplicationSetupToJob(jobConf, true);
-			saveClassPathToJob(jobConf);
+			jobConf.setJarByClass(HadoopUtility.class);
+			//saveClassPathToJob(jobConf);
  		} catch (Exception e) {
 			throw new WrappedIOException("Cannot HadoopUtility.makeTerrierJob", e);
 		}
@@ -227,7 +228,7 @@ public class HadoopUtility {
 	 */
 	public static void loadTerrierJob(JobConf jobConf) throws IOException
 	{
-		if (jobConf.get("mapred.job.tracker").equals("local"))
+		if (isLocalCluster(jobConf))
 			return;
 		try{
 			HadoopPlugin.setGlobalConfiguration(jobConf);
@@ -236,12 +237,16 @@ public class HadoopUtility {
 			 throw new WrappedIOException("Cannot HadoopUtility.loadTerrierJob", e);
 		}
 	}
+
+	public static boolean isLocalCluster(JobConf jobConf) {
+		return jobConf.get("mapreduce.framework.name").equals("local");
+	}
 	
 	/** Call this after the MapReduce job specified by jobConf has completed,
 	 * to clean up any leftover files */
 	public static void finishTerrierJob(JobConf jobConf) throws IOException
 	{
-		if (jobConf.get("mapred.job.tracker").equals("local"))
+		if (isLocalCluster(jobConf))
 			return;
 		deleteJobApplicationSetup(jobConf);
 		removeClassPathFromJob(jobConf);
@@ -332,8 +337,8 @@ public class HadoopUtility {
 
 	protected static Path makeTemporaryFile(JobConf jobConf, String filename) throws IOException
 	{
-		final int randomKey = jobConf.getInt("terrier.tempfile.id", random.nextInt());
-		jobConf.setInt("terrier.tempfile.id", randomKey);
+		final String randomKey = jobConf.get("terrier.tempfile.id", UUID.randomUUID().toString());
+		jobConf.set("terrier.tempfile.id", randomKey);
 		FileSystem defFS = FileSystem.get(jobConf);
         final Path tempFile = new Path(HADOOP_TMP_PATH + "/"+(randomKey)+"-"+filename);
         defFS.deleteOnExit(tempFile);

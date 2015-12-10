@@ -39,7 +39,6 @@ import org.terrier.utility.io.WrappedIOException;
  * @author Richard McCreadie
  * @param <T>
  */
-@SuppressWarnings("deprecation")
 public class PositionAwareSplit<T extends InputSplit> implements InputSplit{
 
 	/** the wrapped split */

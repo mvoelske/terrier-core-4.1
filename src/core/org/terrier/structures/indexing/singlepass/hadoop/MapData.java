@@ -30,6 +30,7 @@ import java.io.DataInputStream;
 import java.io.IOException;
 import java.util.LinkedList;
 
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapred.TaskID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,10 +43,11 @@ import org.slf4j.LoggerFactory;
  * @author Richard McCreadie
  * @since 2.2
   */
-@SuppressWarnings("deprecation")
 public class MapData implements Comparable<MapData>{
 	
 	protected static final Logger logger = LoggerFactory.getLogger(MapData.class);
+	
+	protected Path location;
 	
 	/** TaskID of the Map */
 	protected String mapTaskID;
@@ -62,8 +64,9 @@ public class MapData implements Comparable<MapData>{
 	 * Constructor - Loads the Map Information from the DataInputStream Provided
 	 * @param in - Stream of the Map data file
 	 */
-	public MapData(DataInputStream in) throws IOException{
+	public MapData(DataInputStream in, Path _location) throws IOException{
 		super();
+		this.location = _location;
 		mapTaskID = in.readUTF();
 		int_mapTaskId = TaskID.forName(mapTaskID).getId();
 		int flushSize;
@@ -74,6 +77,11 @@ public class MapData implements Comparable<MapData>{
 		numMapDocs = in.readInt();
 		splitnum = in.readInt();
 		logger.info("map "+mapTaskID+" processed split "+splitnum+" which had "+numMapDocs+" docs, with "+flushDocSizes.size()+" flushes\n");
+	}
+	
+	public Path getMapOutputLocation()
+	{
+		return this.location;
 	}
 
 	/**

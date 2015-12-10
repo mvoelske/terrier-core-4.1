@@ -28,6 +28,7 @@ package org.terrier.tests;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assume.assumeTrue;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -203,11 +204,14 @@ public abstract class BatchEndToEndTest extends ApplicationSetupBasedTest {
 	{
 		CheckClosedStreams.enable();
 		for(BatchEndToEndTestEventHooks hook : this.testHooks)
-			if (! hook.validPlatform())
+		{
+			boolean validPlatform = hook.validPlatform();
+			if (! validPlatform)
 			{
 				System.err.println("Omitting test due to invalid platform, see " + hook.getClass().getName());
-				return;
 			}
+			assumeTrue(validPlatform);
+		}
 		doTrecTerrierIndexing(indexingArgs);
 		CheckClosedStreams.finished();
 		doTrecTerrierRunAndEvaluate(topics, retrievalArgs, qrels, expectedMAP);

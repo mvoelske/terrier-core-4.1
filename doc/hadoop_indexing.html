@@ -43,11 +43,6 @@ Running the MapReduce indexer is straightforward, using the <tt>-H</tt> or <tt>-
 <pre>
 $ bin/trec_terrier.sh -i -H
 Setting TERRIER_HOME to /home/user/terrier
-INFO  HadoopPlugin - Processing HOD for HOD-TerrierIndexing at hod request for 6 nodes
-INFO  HadoopPlugin - INFO - Cluster Id 100.master
-INFO  HadoopPlugin - INFO - HDFS UI at http://master:50070
-INFO  HadoopPlugin - INFO - Mapred UI at http://node01:59794
-INFO  HadoopPlugin - INFO - hadoop-site.xml at /tmp/hod679442803
 INFO  HadoopUtility - Copying terrier share/ directory to shared storage area (hdfs://master:9000/tmp/1265627345-terrier.share)
 WARN  JobClient - Use GenericOptionsParser for parsing the arguments. Applications should implement Tool for the same.
 WARN  JobClient - No job jar file set.  User classes may not be found. See JobConf(Class) or JobConf#setJar(String).
@@ -85,7 +80,6 @@ INFO  JobClient -     Map input bytes=-4167449
 INFO  JobClient -     Combine input records=0
 INFO  JobClient -     Map output records=75700
 INFO  JobClient -     Reduce input records=75700
-INFO  HadoopPlugin - Processing HOD disconnect
 </pre>
 
 <p><b>NB:</b> Please note that you must wait for the MapReduce job to end, and not kill the local Terrier process, otherwise temporary files may be left on the shared file system.</p>
