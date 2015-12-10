@@ -29,8 +29,6 @@ package org.terrier.applications;
 
 
 import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -38,8 +36,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.io.compress.GzipCodec;
@@ -52,8 +48,6 @@ import org.apache.hadoop.mapred.RunningJob;
 import org.apache.hadoop.mapred.TaskID;
 import org.apache.hadoop.mapred.lib.HashPartitioner;
 import org.apache.hadoop.mapred.lib.NullOutputFormat;
-import org.apache.hadoop.util.Tool;
-import org.apache.hadoop.util.ToolRunner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.terrier.structures.BitIndexPointer;
@@ -114,7 +108,7 @@ import org.terrier.utility.io.HadoopUtility;
  * @since 2.2
 */
 @SuppressWarnings("deprecation")
-public class HadoopIndexing extends Configured implements Tool
+public class HadoopIndexing
 {
 	static final int MAX_REDUCE = 26;
 	/** logger for this class */
@@ -130,7 +124,146 @@ public class HadoopIndexing extends Configured implements Tool
 	 * @throws Exception
 	 */	
 	public static void main(String[] args) throws Exception {
-		int r = ToolRunner.run(new Configuration(), new HadoopIndexing(), args);
+		long time = System.currentTimeMillis();
+			
+		boolean docPartitioned = false;
+		int numberOfReducers = Integer.parseInt(ApplicationSetup.getProperty("terrier.hadoop.indexing.reducers", "26"));
+		final HadoopPlugin.JobFactory jf = HadoopPlugin.getJobFactory("HOD-TerrierIndexing");
+		if (args.length==2 && args[0].equals("-p"))
+		{
+			logger.info("Document-partitioned Mode, "+numberOfReducers+" output indices.");
+			numberOfReducers = Integer.parseInt(args[1]);
+			docPartitioned = true;
+		}
+		else if (args.length == 1 && args[0].equals("--merge"))
+		{
+			if (numberOfReducers > 1)
+				mergeLexiconInvertedFiles(ApplicationSetup.TERRIER_INDEX_PATH, numberOfReducers);
+			else
+				logger.error("No point merging 1 reduce task output");
+			return;
+		}
+		else if (args.length == 0)
+		{
+			logger.info("Term-partitioned Mode, "+numberOfReducers+" reducers creating one inverted index.");
+			docPartitioned = false;
+			if (numberOfReducers > MAX_REDUCE)
+			{
+				logger.warn("Excessive reduce tasks ("+numberOfReducers+") in use "
+					+"- SplitEmittedTerm.SETPartitionerLowercaseAlphaTerm can use "+MAX_REDUCE+" at most");
+			}
+		} else
+		{
+			logger.error(usage());
+			return;
+		}
+		
+		if (! (CompressionFactory.getCompressionConfiguration("inverted", new String[0], false) instanceof BitCompressionConfiguration ))
+        {
+        	logger.error("Sorry, only default BitCompressionConfiguration is supported by HadoopIndexing"
+        			+ " - you can recompress the inverted index later using IndexRecompressor");
+        	return;
+        }
+		
+		
+		if (jf == null)
+			throw new Exception("Could not get JobFactory from HadoopPlugin");
+		final JobConf conf = jf.newJob();
+		conf.setJobName("terrierIndexing");
+		if (Files.exists(ApplicationSetup.TERRIER_INDEX_PATH) && Index.existsIndex(ApplicationSetup.TERRIER_INDEX_PATH, ApplicationSetup.TERRIER_INDEX_PREFIX))
+		{
+			logger.error("Cannot index while index exists at "
+				+ApplicationSetup.TERRIER_INDEX_PATH+"," + ApplicationSetup.TERRIER_INDEX_PREFIX);
+			return;
+		}
+		
+		boolean blockIndexing = ApplicationSetup.BLOCK_INDEXING;
+		if (blockIndexing)
+		{
+			conf.setMapperClass(Hadoop_BlockSinglePassIndexer.class);
+			conf.setReducerClass(Hadoop_BlockSinglePassIndexer.class);
+		}
+		else
+		{
+			conf.setMapperClass(Hadoop_BasicSinglePassIndexer.class);
+			conf.setReducerClass(Hadoop_BasicSinglePassIndexer.class);
+		}
+		FileOutputFormat.setOutputPath(conf, new Path(ApplicationSetup.TERRIER_INDEX_PATH));
+		conf.set("indexing.hadoop.prefix", ApplicationSetup.TERRIER_INDEX_PREFIX);
+		conf.setMapOutputKeyClass(SplitEmittedTerm.class);
+		conf.setMapOutputValueClass(MapEmittedPostingList.class);
+		conf.setBoolean("indexing.hadoop.multiple.indices", docPartitioned);
+		
+		if (! conf.get("mapred.job.tracker").equals("local"))
+		{
+			conf.setMapOutputCompressorClass(GzipCodec.class);
+			conf.setCompressMapOutput(true);
+		}
+		else
+		{
+			conf.setCompressMapOutput(false);
+		}
+		
+		conf.setInputFormat(MultiFileCollectionInputFormat.class);
+		conf.setOutputFormat(NullOutputFormat.class);
+		conf.setOutputKeyComparatorClass(SplitEmittedTerm.SETRawComparatorTermSplitFlush.class);
+		conf.setOutputValueGroupingComparator(SplitEmittedTerm.SETRawComparatorTerm.class);
+		conf.setReduceSpeculativeExecution(false);
+		//parse the collection.spec
+		BufferedReader specBR = Files.openFileReader(ApplicationSetup.COLLECTION_SPEC);
+		String line = null;
+		List<Path> paths = new ArrayList<Path>();
+		while((line = specBR.readLine()) != null)
+		{
+			if (line.startsWith("#"))
+				continue;
+			paths.add(new Path(line));
+		}
+		specBR.close();
+		FileInputFormat.setInputPaths(conf,paths.toArray(new Path[paths.size()]));
+		conf.setNumReduceTasks(numberOfReducers);
+		if (numberOfReducers> 1)
+		{
+			if (docPartitioned)
+				conf.setPartitionerClass(SplitEmittedTerm.SETPartitioner.class);
+			else
+				conf.setPartitionerClass(SplitEmittedTerm.SETPartitionerLowercaseAlphaTerm.class);
+		}
+		else
+		{
+			//for JUnit tests, we seem to need to restore the original partitioner class
+			conf.setPartitionerClass(HashPartitioner.class);
+		}
+		
+		JobID jobId = null;
+		boolean ranOK = true;
+		try{
+			RunningJob rj = JobClient.runJob(conf);
+			jobId = rj.getID();
+			HadoopUtility.finishTerrierJob(conf);
+		} catch (Exception e) { 
+			logger.error("Problem running job", e);
+			ranOK = false;
+		}
+		if (jobId != null)
+		{
+			deleteTaskFiles(ApplicationSetup.TERRIER_INDEX_PATH, jobId);
+		}
+		if (ranOK)
+		{
+			if (! docPartitioned)
+			{
+				if (numberOfReducers > 1)
+					mergeLexiconInvertedFiles(ApplicationSetup.TERRIER_INDEX_PATH, numberOfReducers);
+			}
+			
+			Hadoop_BasicSinglePassIndexer.finish(
+					ApplicationSetup.TERRIER_INDEX_PATH, 
+					docPartitioned ? numberOfReducers : 1, 
+					jf);
+		}
+		System.out.println("Time Taken = "+((System.currentTimeMillis()-time)/1000)+" seconds");
+		jf.close();
 	}
 
 	/** for term partitioned indexing, this method merges the lexicons from each reducer
@@ -288,158 +421,4 @@ public class HadoopIndexing extends Configured implements Tool
 			} catch (Exception e) {}
 		}   
 	 }
-
-	@Override
-	public int run(String[] args) throws Exception {
-		long time = System.currentTimeMillis();
-		logger.info("RUN");
-
-		boolean docPartitioned = false;
-		int numberOfReducers = Integer.parseInt(ApplicationSetup.getProperty("terrier.hadoop.indexing.reducers", "26"));
-		/* TODO debug */
-		try (FileOutputStream fout = new FileOutputStream(new File("/tmp/terrier-hadoop-tool-conf.xml"))){
-			getConf().writeXml(fout);
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-		/* /debug */
-		HadoopPlugin.setGlobalConfiguration(getConf());
-		final HadoopPlugin.JobFactory jf = HadoopPlugin.getJobFactory("HOD-TerrierIndexing");
-
-		if (args.length==2 && args[0].equals("-p"))
-		{
-			logger.info("Document-partitioned Mode, "+numberOfReducers+" output indices.");
-			numberOfReducers = Integer.parseInt(args[1]);
-			docPartitioned = true;
-		}
-		else if (args.length == 1 && args[0].equals("--merge"))
-		{
-			if (numberOfReducers > 1)
-				mergeLexiconInvertedFiles(ApplicationSetup.TERRIER_INDEX_PATH, numberOfReducers);
-			else
-				logger.error("No point merging 1 reduce task output");
-			return 1;
-		}
-		else if (args.length == 0)
-		{
-			logger.info("Term-partitioned Mode, "+numberOfReducers+" reducers creating one inverted index.");
-			docPartitioned = false;
-			if (numberOfReducers > MAX_REDUCE)
-			{
-				logger.warn("Excessive reduce tasks ("+numberOfReducers+") in use "
-						+"- SplitEmittedTerm.SETPartitionerLowercaseAlphaTerm can use "+MAX_REDUCE+" at most");
-			}
-		} else
-		{
-			logger.error(usage());
-			return 1;
-		}
-
-		if (! (CompressionFactory.getCompressionConfiguration("inverted", new String[0], false) instanceof BitCompressionConfiguration ))
-		{
-			logger.error("Sorry, only default BitCompressionConfiguration is supported by HadoopIndexing"
-					+ " - you can recompress the inverted index later using IndexRecompressor");
-			return 1;
-		}
-
-
-		final JobConf conf = jf.newJob();
-		conf.setJobName("terrierIndexing");
-		if (Files.exists(ApplicationSetup.TERRIER_INDEX_PATH) && Index.existsIndex(ApplicationSetup.TERRIER_INDEX_PATH, ApplicationSetup.TERRIER_INDEX_PREFIX))
-		{
-			logger.error("Cannot index while index exists at "
-					+ApplicationSetup.TERRIER_INDEX_PATH+"," + ApplicationSetup.TERRIER_INDEX_PREFIX);
-			return 1;
-		}
-
-		boolean blockIndexing = ApplicationSetup.BLOCK_INDEXING;
-		if (blockIndexing)
-		{
-			conf.setMapperClass(Hadoop_BlockSinglePassIndexer.class);
-			conf.setReducerClass(Hadoop_BlockSinglePassIndexer.class);
-		}
-		else
-		{
-			conf.setMapperClass(Hadoop_BasicSinglePassIndexer.class);
-			conf.setReducerClass(Hadoop_BasicSinglePassIndexer.class);
-		}
-		FileOutputFormat.setOutputPath(conf, new Path(ApplicationSetup.TERRIER_INDEX_PATH));
-		conf.set("indexing.hadoop.prefix", ApplicationSetup.TERRIER_INDEX_PREFIX);
-		conf.setMapOutputKeyClass(SplitEmittedTerm.class);
-		conf.setMapOutputValueClass(MapEmittedPostingList.class);
-		conf.setBoolean("indexing.hadoop.multiple.indices", docPartitioned);
-
-		if (! conf.get("mapred.job.tracker").equals("local"))
-		{
-			conf.setMapOutputCompressorClass(GzipCodec.class);
-			conf.setCompressMapOutput(true);
-		}
-		else
-		{
-			conf.setCompressMapOutput(false);
-		}
-
-		conf.setInputFormat(MultiFileCollectionInputFormat.class);
-		conf.setOutputFormat(NullOutputFormat.class);
-		conf.setOutputKeyComparatorClass(SplitEmittedTerm.SETRawComparatorTermSplitFlush.class);
-		conf.setOutputValueGroupingComparator(SplitEmittedTerm.SETRawComparatorTerm.class);
-		conf.setReduceSpeculativeExecution(false);
-		//parse the collection.spec
-		BufferedReader specBR = Files.openFileReader(ApplicationSetup.COLLECTION_SPEC);
-		String line = null;
-		List<Path> paths = new ArrayList<Path>();
-		while((line = specBR.readLine()) != null)
-		{
-			if (line.startsWith("#"))
-				continue;
-			paths.add(new Path(line));
-		}
-		specBR.close();
-		FileInputFormat.setInputPaths(conf,paths.toArray(new Path[paths.size()]));
-		conf.setNumReduceTasks(numberOfReducers);
-		if (numberOfReducers> 1)
-		{
-			if (docPartitioned)
-				conf.setPartitionerClass(SplitEmittedTerm.SETPartitioner.class);
-			else
-				conf.setPartitionerClass(SplitEmittedTerm.SETPartitionerLowercaseAlphaTerm.class);
-		}
-		else
-		{
-			//for JUnit tests, we seem to need to restore the original partitioner class
-			conf.setPartitionerClass(HashPartitioner.class);
-		}
-
-		JobID jobId = null;
-		boolean ranOK = true;
-		conf.setJarByClass(HadoopIndexing.class);
-		try{
-			RunningJob rj = JobClient.runJob(conf);
-			jobId = rj.getID();
-			HadoopUtility.finishTerrierJob(conf);
-		} catch (Exception e) {
-			logger.error("Problem running job", e);
-			ranOK = false;
-		}
-		if (jobId != null)
-		{
-			deleteTaskFiles(ApplicationSetup.TERRIER_INDEX_PATH, jobId);
-		}
-		if (ranOK)
-		{
-			if (! docPartitioned)
-			{
-				if (numberOfReducers > 1)
-					mergeLexiconInvertedFiles(ApplicationSetup.TERRIER_INDEX_PATH, numberOfReducers);
-			}
-
-			Hadoop_BasicSinglePassIndexer.finish(
-					ApplicationSetup.TERRIER_INDEX_PATH,
-					docPartitioned ? numberOfReducers : 1,
-					jf);
-		}
-		System.out.println("Time Taken = "+((System.currentTimeMillis()-time)/1000)+" seconds");
-		jf.close();
-		return ranOK ? 0 : 1;
-	}
 }

@@ -25,7 +25,13 @@
  *   
  */
 package org.terrier.utility.io;
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.net.URI;
 import java.util.Random;
 
@@ -315,11 +321,6 @@ public class HadoopPlugin implements ApplicationSetup.TerrierApplicationPlugin
 	
 	/** Update the global Hadoop configuration in use by the plugin */
 	public static void setGlobalConfiguration(Configuration _config) {
-		try (FileOutputStream fout = new FileOutputStream(new File("/tmp/terrier-hadoop-effective-conf.xml"))){
-			_config.writeXml(fout);
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
 		singletonConfiguration = _config;
 	}
 
